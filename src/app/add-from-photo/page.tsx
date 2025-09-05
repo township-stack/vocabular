@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Save, RefreshCw, Camera } from "lucide-react";
+import { v4 as uuid } from "uuid";
 
 import {
   Card,
@@ -18,6 +19,42 @@ import { MOCK_CATEGORIES } from "@/lib/mock-data";
 import { useTesseractOcr } from "@/hooks/useTesseractOcr";
 import { Progress } from "@/components/ui/progress";
 import CameraModal from "@/components/camera-modal";
+import type { Card as CardType } from "@/lib/types";
+
+
+// --- Local Storage Helpers ---
+
+function loadCards(): CardType[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem("cards") ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveCards(cards: CardType[]) {
+  localStorage.setItem("cards", JSON.stringify(cards));
+}
+
+function savePairsLocal(pairs: { front: string; back: string }[]) {
+  const existing = loadCards();
+  const now = new Date().toISOString();
+  const newCards: CardType[] = pairs.map(p => ({
+    id: uuid(),
+    front: p.front,
+    back: p.back,
+    reps: 0,
+    ease: 2.5,
+    interval: 0,
+    due: now, // Ready for review immediately
+    createdAt: now,
+  }));
+  saveCards([...existing, ...newCards]);
+}
+
+
+// --- Component ---
 
 type Pair = { front: string; back: string; selected: boolean };
 
@@ -129,11 +166,11 @@ export default function AddFromPhotoPage() {
     terminate(); // Terminate worker to free up memory
   };
   
-  const handleSave = async () => {
+  const handleSave = () => {
     const selectedPairs = pairs.filter(p => p.selected).map(p => ({
         front: p.front,
         back: p.back,
-        categoryId: selectedCategory,
+        // categoryId: selectedCategory, // Category logic can be added later
     }));
 
     if (selectedPairs.length === 0) {
@@ -145,18 +182,21 @@ export default function AddFromPhotoPage() {
         return;
     }
 
-    // Currently only logging (cleanly separated)
-    console.log("[OCR] Save candidates:", selectedPairs);
-
-    // Later: enable real saving
-    // await savePairs(selectedPairs);
-
-    toast({
-        title: "Vorschläge gespeichert (Demo)",
-        description: `${selectedPairs.length} Einträge wurden (noch lokal) protokolliert.`,
-    });
-    
-    handleReset();
+    try {
+        savePairsLocal(selectedPairs);
+        toast({
+            title: "Karten gespeichert!",
+            description: `${selectedPairs.length} neue Karten wurden lokal gespeichert.`,
+        });
+        handleReset();
+    } catch (error) {
+        console.error("Error saving pairs:", error);
+        toast({
+            variant: "destructive",
+            title: "Fehler beim Speichern",
+            description: "Die Karten konnten nicht gespeichert werden.",
+        });
+    }
   };
 
 

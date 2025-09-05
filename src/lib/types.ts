@@ -1,3 +1,24 @@
+
+export interface Card {
+  id: string;
+  front: string;
+  back: string;
+  reps: number;
+  ease: number;
+  interval: number;
+  due: string | null;
+  categoryId?: string; // Keep for potential future use with categories
+  createdAt?: string; // Keep for potential future use
+}
+
+export interface Category {
+  id: string;
+  name:string;
+}
+
+// The following types are kept for future transition to a full Firebase backend.
+// They are not actively used in the local-only version.
+
 export interface Profile {
   displayName: string;
   locale: 'de-DE';
@@ -6,24 +27,6 @@ export interface Profile {
   createdAt: Date;
 }
 
-export interface Category {
-  id: string;
-  name:string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface Card {
-  id: string;
-  front: string;
-  back: string;
-  langFront: 'pl' | 'de';
-  langBack: 'pl' | 'de';
-  categoryId: string;
-  createdAt: Date;
-  updatedAt: Date;
-  tags: string[];
-}
 
 export interface SrsData {
   reps: number;
