@@ -20,21 +20,20 @@ export default function CategoryList() {
             <CardDescription>Your vocabulary decks.</CardDescription>
           </div>
           <Button size="sm" variant="ghost">
-            <PlusCircle className="h-4 w-4 mr-2" />
-            New
+            <PlusCircle className="h-4 w-4" />
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[260px]">
-          <div className="space-y-2">
+        <ScrollArea className="h-[260px] -mx-6">
+          <div className="space-y-1 px-6">
             {MOCK_CATEGORIES.map((category) => (
               <div
                 key={category.id}
-                className="flex items-center justify-between rounded-md border p-3 hover:bg-muted/50 transition-colors"
+                className="flex items-center justify-between rounded-md p-3 -mx-3 hover:bg-accent transition-colors"
               >
                 <span className="font-medium text-sm">{category.name}</span>
-                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">
+                <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-full">
                   {category.cardCount} cards
                 </span>
               </div>

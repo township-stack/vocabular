@@ -26,7 +26,12 @@ export default function StudyPlanner() {
   const handlePlanStudy = () => {
     startTransition(async () => {
       try {
-        const result = await planTodaysStudy({ userId: "mock-user-123" });
+        // Mocked result for UI development
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const result = {
+          recommendedTargetCount: 25,
+          reasoning: "Based on your recent progress and card distribution, 25 cards is an ideal target to maintain momentum without feeling overwhelmed."
+        };
         setPlan(result);
       } catch (e) {
         toast({
@@ -45,10 +50,10 @@ export default function StudyPlanner() {
   }, []);
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full flex flex-col bg-card border-2 border-primary/20 shadow-lg shadow-primary/5">
       <CardHeader>
-        <div className="flex items-center gap-3">
-          <div className="bg-primary text-primary-foreground p-3 rounded-lg">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary/10 text-primary p-3 rounded-lg">
             <BrainCircuit className="h-6 w-6" />
           </div>
           <div>
@@ -66,12 +71,12 @@ export default function StudyPlanner() {
            </div>
         ) : plan ? (
           <div>
-            <p className="text-muted-foreground mb-2 text-sm">
+            <p className="text-muted-foreground mb-4 text-sm">
               {plan.reasoning}
             </p>
-            <p className="text-4xl font-bold text-primary">
+            <p className="text-5xl font-bold text-foreground">
               {plan.recommendedTargetCount}{" "}
-              <span className="text-lg font-normal text-muted-foreground">
+              <span className="text-xl font-medium text-muted-foreground">
                 cards
               </span>
             </p>
@@ -86,8 +91,8 @@ export default function StudyPlanner() {
           </div>
         )}
       </CardContent>
-      <CardFooter className="flex justify-between items-center border-t pt-4">
-        <Button onClick={handlePlanStudy} variant="outline" disabled={isPending}>
+      <CardFooter className="flex justify-between items-center border-t pt-4 mt-4">
+        <Button onClick={handlePlanStudy} variant="ghost" disabled={isPending}>
           {isPending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
