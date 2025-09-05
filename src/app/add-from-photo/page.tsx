@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Save, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Save, RefreshCw, Camera } from "lucide-react";
 
 import {
   Card,
@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { MOCK_CATEGORIES } from "@/lib/mock-data";
 import { useTesseractOcr } from "@/hooks/useTesseractOcr";
 import { Progress } from "@/components/ui/progress";
+import CameraModal from "@/components/camera-modal";
 
 type Pair = { front: string; back: string; selected: boolean };
 
@@ -72,6 +73,7 @@ export default function AddFromPhotoPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -217,12 +219,32 @@ export default function AddFromPhotoPage() {
     }
 
     return (
-        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+        <div className="text-center py-12 border-2 border-dashed rounded-lg flex flex-col items-center gap-4">
             <h3 className="text-lg font-semibold text-muted-foreground">Bereit zum Scannen</h3>
-            <p className="text-sm text-muted-foreground mb-4">Wähle ein Foto von deinem Gerät aus.</p>
-            <Button onClick={() => fileInputRef.current?.click()}>
-                Foto auswählen
-            </Button>
+            <p className="text-sm text-muted-foreground">Wähle ein Foto von deinem Gerät aus oder nimm eins auf.</p>
+            <div className="flex items-center gap-3">
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleFileChange}
+                />
+                <Button
+                    variant="default"
+                    onClick={() => fileInputRef.current?.click()}
+                >
+                    Foto/Datei wählen
+                </Button>
+                <Button
+                    variant="outline"
+                    onClick={() => setCameraOpen(true)}
+                >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Foto aufnehmen
+                </Button>
+            </div>
         </div>
     );
   };
@@ -243,13 +265,6 @@ export default function AddFromPhotoPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="min-h-[250px] flex items-center justify-center">
-            <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
-                accept="image/*"
-            />
           {renderContent()}
         </CardContent>
         <CardFooter className="flex justify-end gap-4 border-t pt-6">
@@ -261,6 +276,29 @@ export default function AddFromPhotoPage() {
             )}
         </CardFooter>
       </Card>
+      
+      <CameraModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (canvas) => {
+            setCameraOpen(false);
+            setIsLoading(true);
+            try {
+                const { text } = await recognize(canvas);
+                setRawText(text);
+                setPairs(parsePairs(text));
+            } catch (error) {
+                console.error("Error during OCR process:", error);
+                toast({
+                    variant: "destructive",
+                    title: "Fehler bei der Texterkennung",
+                    description: "Das Kamerabild konnte nicht verarbeitet werden.",
+                });
+            } finally {
+                setIsLoading(false);
+            }
+        }}
+      />
     </div>
   );
 }
