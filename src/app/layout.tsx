@@ -7,6 +7,7 @@ import AppLayout from "@/components/app-layout";
 export const metadata: Metadata = {
   title: "LinguaDeck",
   description: "Your personal OCR vocabulary trainer for Polish and German.",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <meta name="theme-color" content="#000000" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"
