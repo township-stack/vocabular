@@ -43,22 +43,6 @@ export function useTesseractOcr() {
     return workerRef.current;
   }, [isReady]);
 
-  // Pre-initialize the worker on mount.
-  useEffect(() => {
-    // We don't pre-init anymore to save resources on mobile
-    return () => {
-        // Cleanup on unmount
-        terminate();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<OcrResult> => {
-    const worker = await ensureWorker();
-    const { data } = await worker.recognize(imageSource);
-    return { text: data.text, confidence: data.confidence ?? 0 };
-  }, [ensureWorker]);
-
   const terminate = useCallback(async () => {
     if (workerRef.current) {
       await workerRef.current.terminate();
@@ -68,6 +52,23 @@ export function useTesseractOcr() {
       setProgress(0);
     }
   }, []);
+
+  // Pre-initialize on mount if not on mobile for better desktop UX
+  useEffect(() => {
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    if (!isMobile) {
+      // ensureWorker(); // Deactivated to save resources, will init on demand
+    }
+    return () => {
+      terminate();
+    };
+  }, [ensureWorker, terminate]);
+
+  const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<OcrResult> => {
+    const worker = await ensureWorker();
+    const { data } = await worker.recognize(imageSource);
+    return { text: data.text, confidence: data.confidence ?? 0 };
+  }, [ensureWorker]);
 
   return { recognize, progress, status, terminate, isReady };
 }
