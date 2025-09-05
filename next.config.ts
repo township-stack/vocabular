@@ -7,6 +7,23 @@ const pwaConfig = withPWA({
   disable: process.env.NODE_ENV === 'development',
   cacheOnFrontEndNav: true,
   fallbacks: { image: '/icon-192.png' },
+  runtimeCaching: [
+    {
+      urlPattern: /\/tessdata\/.*\.traineddata$/i,
+      handler: 'CacheFirst',
+      options: { cacheName: 'tessdata', expiration: { maxEntries: 20 } }
+    },
+    {
+      urlPattern: /\/tesseract\/.*\.(?:wasm|js)$/i,
+      handler: 'CacheFirst',
+      options: { cacheName: 'tesseract-core', expiration: { maxEntries: 20 } }
+    },
+    {
+      urlPattern: /^https:\/\/fonts\.(?:gstatic|googleapis)\.com\/.*/i,
+      handler: 'StaleWhileRevalidate',
+      options: { cacheName: 'google-fonts' }
+    }
+  ]
 });
 
 

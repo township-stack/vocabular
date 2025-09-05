@@ -9,7 +9,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "copy-tesseract-assets": "cpx \"node_modules/tesseract.js/dist/worker.min.js\" public/tesseract && cpx \"node_modules/tesseract.js/dist/tesseract-core.wasm\" public/tesseract && cpx \"node_modules/tesseract.js/dist/tesseract-core.wasm.js\" public/tesseract",
+    "postinstall": "npm run copy-tesseract-assets"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.14.1",
@@ -63,6 +65,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/uuid": "^9.0.8",
+    "cpx": "^1.5.0",
     "genkit-cli": "^1.14.1",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",

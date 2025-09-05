@@ -16,9 +16,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="de">
       <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#000000" />
+        {/* iOS PWA */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"

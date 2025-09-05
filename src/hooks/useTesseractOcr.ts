@@ -20,10 +20,9 @@ export function useTesseractOcr() {
     setStatus('Worker wird initialisiert...');
     
     const worker = await createWorker({
-      // Paths for offline operation (language & wasm)
-      // These files need to be in the public/tessdata folder
-      langPath: '/tessdata', 
-      // corePath: '/path/to/tesseract-core.wasm.js', // If hosting locally
+      workerPath: '/tesseract/worker.min.js',
+      corePath: '/tesseract/tesseract-core.wasm.js',
+      langPath: '/tessdata',
       logger: (m) => {
         if (m.status) {
             // Capitalize first letter
@@ -46,8 +45,7 @@ export function useTesseractOcr() {
 
   // Pre-initialize the worker on mount.
   useEffect(() => {
-    ensureWorker();
-    
+    // We don't pre-init anymore to save resources on mobile
     return () => {
         // Cleanup on unmount
         terminate();
