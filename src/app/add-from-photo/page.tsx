@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { ArrowLeft, Camera, Check, Loader2, RefreshCw, X } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { ArrowLeft, Camera, Check, Loader2, RefreshCw, ScanText, X, Languages, PlusCircle, Save } from "lucide-react";
 import Link from "next/link";
 import {
   Card,
@@ -13,10 +13,20 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { extractTextFromImage } from "@/ai/flows/ocr";
+import { createWorker, Worker } from 'tesseract.js';
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MOCK_CATEGORIES } from "@/lib/mock-data";
+
+
+interface OcrProgress {
+    status: string;
+    progress: number;
+}
+
 
 export default function AddFromPhotoPage() {
   const { toast } = useToast();
@@ -25,7 +35,37 @@ export default function AddFromPhotoPage() {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [extractedData, setExtractedData] = useState<{ front: string; back: string } | null>(null);
+  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
+  const [extractedText, setExtractedText] = useState<string | null>(null);
+  
+  const [front, setFront] = useState('');
+  const [back, setBack] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '');
+
+  const workerRef = useRef<Worker | null>(null);
+
+  const setupWorker = useCallback(async () => {
+    const worker = await createWorker({
+      logger: m => {
+        if (m.status === 'recognizing text') {
+            setOcrProgress({ status: m.status, progress: m.progress });
+        } else {
+            console.log(m);
+        }
+      },
+    });
+    await worker.loadLanguage('pol+deu');
+    await worker.initialize('pol+deu');
+    workerRef.current = worker;
+  }, []);
+
+  useEffect(() => {
+    setupWorker();
+    return () => {
+      workerRef.current?.terminate();
+    }
+  }, [setupWorker]);
+  
 
   useEffect(() => {
     const getCameraPermission = async () => {
@@ -84,16 +124,29 @@ export default function AddFromPhotoPage() {
   
   const handleRetake = () => {
     setCapturedImage(null);
-    setExtractedData(null);
+    setExtractedText(null);
+    setOcrProgress(null);
+    setFront('');
+    setBack('');
   };
 
   const handleProcessImage = async () => {
-    if (!capturedImage) return;
+    if (!capturedImage || !workerRef.current) return;
 
     setIsProcessing(true);
+    setOcrProgress({ status: 'starting', progress: 0 });
     try {
-      const result = await extractTextFromImage({ photoDataUri: capturedImage });
-      setExtractedData(result);
+      const { data: { text } } = await workerRef.current.recognize(capturedImage);
+      setExtractedText(text);
+      // Simple heuristic: if there's a newline, take the first line as front.
+      // This part can be improved with a Genkit flow later if needed.
+      const lines = text.split('\n').filter(line => line.trim() !== '');
+      if (lines.length > 0) {
+        setFront(lines[0]);
+        if (lines.length > 1) {
+            setBack(lines[1]);
+        }
+      }
     } catch (error) {
       console.error("Error processing image:", error);
       toast({
@@ -103,18 +156,129 @@ export default function AddFromPhotoPage() {
       });
     } finally {
       setIsProcessing(false);
+      setOcrProgress(null);
     }
   };
 
   const handleSaveCard = () => {
-    // Logic to save the card will be implemented later
+    // In a real app, this would call a Firestore function to save the card.
+    console.log("Saving card:", {
+        front,
+        back,
+        categoryId: selectedCategory,
+    });
     toast({
         title: "Karte gespeichert (simuliert)",
-        description: "Deine neue Karte wurde zur Bibliothek hinzugefügt.",
+        description: `Vorderseite: ${front}`,
     });
+    // Reset for next card
     handleRetake();
   };
 
+  const renderContent = () => {
+    if (extractedText !== null) {
+      return (
+        <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                    <Label htmlFor="front">Vorderseite (Polnisch)</Label>
+                    <Textarea id="front" value={front} onChange={(e) => setFront(e.target.value)} className="mt-1" />
+                </div>
+                <div>
+                    <Label htmlFor="back">Rückseite (Deutsch)</Label>
+                    <Textarea id="back" value={back} onChange={(e) => setBack(e.target.value)} className="mt-1" />
+                </div>
+             </div>
+             <div>
+                <Label htmlFor="category">Kategorie</Label>
+                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                    <SelectTrigger id="category" className="mt-1">
+                        <SelectValue placeholder="Kategorie auswählen" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {MOCK_CATEGORIES.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+             </div>
+             <div className="mt-4">
+                <Label>Erkannter Rohtext</Label>
+                <pre className="mt-1 text-xs p-3 bg-muted rounded-md max-h-40 overflow-auto whitespace-pre-wrap font-code">{extractedText}</pre>
+             </div>
+        </div>
+      );
+    }
+
+    if (capturedImage) {
+        if (isProcessing) {
+            return (
+                 <div className="flex flex-col items-center justify-center text-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                    <p className="text-muted-foreground font-medium mb-2">Texterkennung läuft...</p>
+                    <p className="text-sm text-muted-foreground capitalize mb-2">{ocrProgress?.status.replace(/_/g, ' ') || 'Initialisiere'}</p>
+                    <Progress value={ocrProgress ? ocrProgress.progress * 100 : 0} className="w-full max-w-sm" />
+                </div>
+            )
+        }
+        return (
+            <div className="relative aspect-video w-full max-w-2xl mx-auto bg-muted rounded-md overflow-hidden flex items-center justify-center">
+                 {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={capturedImage} alt="Captured" className="w-full h-auto" />
+            </div>
+        );
+    }
+
+    // Default camera view
+     return (
+        <div className="relative aspect-video w-full max-w-2xl mx-auto bg-muted rounded-md overflow-hidden flex items-center justify-center">
+           {hasCameraPermission === false && (
+            <Alert variant="destructive" className="absolute m-4">
+              <AlertTitle>Kamerazugriff erforderlich</AlertTitle>
+              <AlertDescription>
+                Bitte erlaube den Zugriff auf die Kamera, um diese Funktion zu nutzen.
+              </AlertDescription>
+            </Alert>
+          )}
+          <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
+          {hasCameraPermission === null && (
+            <div className="absolute inset-0 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <p className="ml-2">Kamera wird gestartet...</p>
+            </div>
+          )}
+        </div>
+     );
+  };
+
+  const renderFooter = () => {
+    if (extractedText !== null) {
+        return (
+            <>
+               <Button variant="outline" onClick={handleRetake}><RefreshCw className="mr-2" /> Erneut aufnehmen</Button>
+               <Button onClick={handleSaveCard} disabled={!front || !back}><Save className="mr-2" /> Karte speichern</Button>
+            </>
+        )
+    }
+    
+    if (capturedImage) {
+        return (
+            <>
+                <Button variant="outline" onClick={handleRetake} disabled={isProcessing}><X className="mr-2" /> Wiederholen</Button>
+                <Button onClick={handleProcessImage} disabled={isProcessing || !workerRef.current}>
+                    {isProcessing ? <Loader2 className="mr-2 animate-spin" /> : <ScanText className="mr-2" />}
+                    {isProcessing ? "Wird verarbeitet..." : "Text erkennen"}
+                </Button>
+             </>
+        )
+    }
+
+    return (
+        <Button onClick={handleCapture} disabled={hasCameraPermission !== true}>
+            <Camera className="mr-2" /> Foto aufnehmen
+        </Button>
+    )
+  }
 
   return (
     <div className="space-y-8">
@@ -127,7 +291,7 @@ export default function AddFromPhotoPage() {
         <CardHeader>
           <CardTitle>Karte aus Foto hinzufügen</CardTitle>
           <CardDescription>
-            {extractedData
+            {extractedText !== null
               ? "Überprüfe den erkannten Text und speichere deine Karte."
               : capturedImage
               ? "Das Bild wurde erfasst. Bist du bereit für die Texterkennung?"
@@ -135,63 +299,11 @@ export default function AddFromPhotoPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {hasCameraPermission === false && (
-            <Alert variant="destructive">
-              <AlertTitle>Kamerazugriff erforderlich</AlertTitle>
-              <AlertDescription>
-                Bitte erlaube den Zugriff auf die Kamera, um diese Funktion zu nutzen.
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="relative aspect-video w-full max-w-2xl mx-auto bg-muted rounded-md overflow-hidden flex items-center justify-center">
-            {capturedImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={capturedImage} alt="Captured" className="w-full h-auto" />
-            ) : (
-                <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
-            )}
-             {hasCameraPermission === null && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-             )}
-          </div>
+            {renderContent()}
            <canvas ref={canvasRef} className="hidden" />
-
-           {extractedData && (
-             <div className="mt-6 grid gap-4 md:grid-cols-2">
-                <div>
-                    <Label htmlFor="front">Vorderseite</Label>
-                    <Textarea id="front" value={extractedData.front} onChange={(e) => setExtractedData({...extractedData, front: e.target.value})} className="mt-1" />
-                </div>
-                <div>
-                    <Label htmlFor="back">Rückseite</Label>
-                    <Textarea id="back" value={extractedData.back} onChange={(e) => setExtractedData({...extractedData, back: e.target.value})} className="mt-1" />
-                </div>
-             </div>
-           )}
-
         </CardContent>
         <CardFooter className="flex justify-center gap-4 border-t pt-6">
-          {extractedData ? (
-            <>
-               <Button variant="outline" onClick={handleRetake}><RefreshCw className="mr-2 h-4 w-4" /> Erneut aufnehmen</Button>
-               <Button onClick={handleSaveCard}><Check className="mr-2 h-4 w-4" /> Karte speichern</Button>
-            </>
-          ) : capturedImage ? (
-             <>
-                <Button variant="outline" onClick={handleRetake} disabled={isProcessing}><X className="mr-2 h-4 w-4" /> Wiederholen</Button>
-                <Button onClick={handleProcessImage} disabled={isProcessing}>
-                    {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
-                    {isProcessing ? "Wird verarbeitet..." : "Bestätigen"}
-                </Button>
-             </>
-          ) : (
-            <Button onClick={handleCapture} disabled={hasCameraPermission !== true}>
-              <Camera className="mr-2 h-4 w-4" /> Foto aufnehmen
-            </Button>
-          )}
+          {renderFooter()}
         </CardFooter>
       </Card>
     </div>
