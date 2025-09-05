@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, Download } from "lucide-react";
+import { Upload, Download, PlusCircle } from "lucide-react";
+import Link from "next/link";
 
 export default function ManagePage() {
   return (
@@ -13,6 +14,9 @@ export default function ManagePage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link href="/add-from-photo" passHref>
+            <Button><PlusCircle className="mr-2 h-4 w-4" /> Add from Photo</Button>
+          </Link>
           <Button variant="outline"><Upload className="mr-2 h-4 w-4" /> Import CSV</Button>
           <Button variant="outline"><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
         </div>
