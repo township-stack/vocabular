@@ -10,20 +10,8 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import type { SrsData } from '@/lib/types';
 
-// Simulating the SRS data structure that would be in Firestore
-// `users/{userId}/srs/{cardId}`
-const SrsDataSchema = z.object({
-  reps: z.number().default(0),
-  ease: z.number().default(2.5),
-  intervalDays: z.number().default(0),
-  lapses: z.number().default(0),
-  dueAt: z.date().nullable().default(null),
-  lastReviewAt: z.date().nullable().default(null),
-  algorithm: z.enum(['SM2', 'Leitner']).default('SM2'),
-  leitnerBox: z.number().optional(),
-});
-type SrsData = z.infer<typeof SrsDataSchema>;
 
 export const SubmitReviewInputSchema = z.object({
   cardId: z.string().describe('The ID of the card being reviewed.'),
@@ -35,14 +23,13 @@ export const SubmitReviewInputSchema = z.object({
     .describe(
       'The quality of the recall (0: complete blackout, 5: perfect recall).'
     ),
-  currentSrsData: SrsDataSchema.describe(
+  currentSrsData: z.custom<SrsData>().describe(
     'The current SRS data for the card before this review.'
   ),
 });
 export type SubmitReviewInput = z.infer<typeof SubmitReviewInputSchema>;
 
-// The output will be the new state of the SRS data for the card.
-export const SubmitReviewOutputSchema = SrsDataSchema;
+export const SubmitReviewOutputSchema = z.custom<SrsData>();
 export type SubmitReviewOutput = z.infer<typeof SubmitReviewOutputSchema>;
 
 function getBerlinMidnight(date: Date): Date {

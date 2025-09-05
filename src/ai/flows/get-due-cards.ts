@@ -40,6 +40,7 @@ function getEndOfDay(timezone: string): Date {
     minute: '59',
     second: '59',
     timeZone: timezone,
+    hour12: false,
   };
   const formatter = new Intl.DateTimeFormat('en-US', options);
   const parts = formatter.formatToParts(now);
@@ -48,7 +49,10 @@ function getEndOfDay(timezone: string): Date {
   const month = parseInt(parts.find(p => p.type === 'month')!.value) -1;
   const day = parseInt(parts.find(p => p.type === 'day')!.value);
   
-  return new Date(year, month, day, 23, 59, 59, 999);
+  // This correctly creates a date for the end of the day in the specified timezone
+  const dateInTimezone = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
+  
+  return dateInTimezone;
 }
 
 
@@ -74,7 +78,9 @@ const getDueCardsFlow = ai.defineFlow(
 
     const dueSrsEntries = allSrsData
       .filter(srs => {
-        const isDue = srs.dueAt && srs.dueAt <= todayEnd;
+        if (!srs.dueAt) return false;
+        // Important: Compare timestamps correctly
+        const isDue = srs.dueAt.getTime() <= todayEnd.getTime();
         const categoryMatch = !categoryId || (srs.categoryId === categoryId);
         return isDue && categoryMatch;
       })

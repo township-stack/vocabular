@@ -32,7 +32,7 @@ export const MOCK_SRS_DATA_MAP: Record<string, SrsData> = {
   // Not due yet
   c5: { cardId: 'c5', categoryId: '3', dueAt: new Date(now.getTime() + 5 * 86400000), reps: 4, ease: 2.6, intervalDays: 15, lapses: 0, lastReviewAt: new Date(now.getTime() - 10 * 86400000), algorithm: 'SM2' },
   // New card, never reviewed
-  c6: { cardId: 'c6', categoryId: '3', dueAt: null, reps: 0, ease: 2.5, intervalDays: 0, lapses: 0, lastReviewAt: null, algorithm: 'SM2' },
+  c6: { cardId: 'c6', categoryId: '3', dueAt: new Date(), reps: 0, ease: 2.5, intervalDays: 0, lapses: 0, lastReviewAt: null, algorithm: 'SM2' },
 };
 
 export const MOCK_SRS_DATA = Object.values(MOCK_SRS_DATA_MAP);
