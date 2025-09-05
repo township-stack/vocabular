@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { ArrowLeft, Camera, Check, Loader2, RefreshCw, ScanText, X, Languages, PlusCircle, Save } from "lucide-react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { ArrowLeft, Loader2, Save, RefreshCw } from "lucide-react";
+
 import {
   Card,
   CardContent,
@@ -13,272 +14,219 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { createWorker, Worker } from 'tesseract.js';
-import { Textarea } from "@/components/ui/textarea";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MOCK_CATEGORIES } from "@/lib/mock-data";
+import { useTesseractOcr } from "@/hooks/useTesseractOcr";
+import { Progress } from "@/components/ui/progress";
 
+type Pair = { front: string; back: string; selected: boolean };
 
-interface OcrProgress {
-    status: string;
-    progress: number;
+function parsePairs(raw: string): Pair[] {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  const out: Pair[] = [];
+  for (const line of lines) {
+    // Common separators: – — - : ; → =>
+    const m = line.match(/^(.*?)\s*(?:[-–—:;→]|=>)\s*(.+)$/);
+    if (m && m[1]?.trim() && m[2]?.trim()) {
+      out.push({ front: m[1].trim(), back: m[2].trim(), selected: true });
+    }
+  }
+  return out;
 }
 
+// Helper: client-side downscaling for performance
+async function downscaleImage(file: File, maxDim = 2200): Promise<HTMLCanvasElement> {
+  const img = await fileToImage(file);
+  const { width, height } = fitContain(img.width, img.height, maxDim);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas;
+}
+
+function fitContain(w: number, h: number, maxDim: number) {
+  const scale = Math.min(maxDim / w, maxDim / h, 1);
+  return { width: Math.round(w * scale), height: Math.round(h * scale) };
+}
+
+function fileToImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url); // Clean up memory
+      res(img);
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+}
 
 export default function AddFromPhotoPage() {
   const { toast } = useToast();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState<OcrProgress | null>(null);
-  const [extractedText, setExtractedText] = useState<string | null>(null);
-  
-  const [front, setFront] = useState('');
-  const [back, setBack] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '');
+  const { recognize, progress, status, terminate } = useTesseractOcr();
+  const [pairs, setPairs] = useState<Pair[]>([]);
+  const [rawText, setRawText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const workerRef = useRef<Worker | null>(null);
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const setupWorker = useCallback(async () => {
-    const worker = await createWorker({
-      logger: m => {
-        if (m.status === 'recognizing text') {
-            setOcrProgress({ status: m.status, progress: m.progress });
-        } else {
-            console.log(m);
-        }
-      },
-    });
-    await worker.loadLanguage('pol+deu');
-    await worker.initialize('pol+deu');
-    workerRef.current = worker;
-  }, []);
-
-  useEffect(() => {
-    setupWorker();
-    return () => {
-      workerRef.current?.terminate();
-    }
-  }, [setupWorker]);
-  
-
-  useEffect(() => {
-    const getCameraPermission = async () => {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.error("Camera API is not available in this browser.");
-        setHasCameraPermission(false);
-        toast({
-          variant: "destructive",
-          title: "Kamera nicht unterstützt",
-          description: "Dein Browser unterstützt die Kamera-API nicht.",
-        });
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        setHasCameraPermission(true);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (error) {
-        console.error("Error accessing camera:", error);
-        setHasCameraPermission(false);
-        toast({
-          variant: "destructive",
-          title: "Kamerazugriff verweigert",
-          description: "Bitte aktiviere den Kamerazugriff in deinen Browser-Einstellungen.",
-        });
-      }
-    };
-
-    getCameraPermission();
+    setIsLoading(true);
+    setPairs([]);
+    setRawText('');
     
-    return () => {
-        if (videoRef.current && videoRef.current.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-        }
-    }
-  }, [toast]);
-
-  const handleCapture = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const context = canvas.getContext("2d");
-      if (context) {
-        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-        const dataUrl = canvas.toDataURL("image/jpeg");
-        setCapturedImage(dataUrl);
-      }
-    }
-  };
-  
-  const handleRetake = () => {
-    setCapturedImage(null);
-    setExtractedText(null);
-    setOcrProgress(null);
-    setFront('');
-    setBack('');
-  };
-
-  const handleProcessImage = async () => {
-    if (!capturedImage || !workerRef.current) return;
-
-    setIsProcessing(true);
-    setOcrProgress({ status: 'starting', progress: 0 });
     try {
-      const { data: { text } } = await workerRef.current.recognize(capturedImage);
-      setExtractedText(text);
-      // Simple heuristic: if there's a newline, take the first line as front.
-      // This part can be improved with a Genkit flow later if needed.
-      const lines = text.split('\n').filter(line => line.trim() !== '');
-      if (lines.length > 0) {
-        setFront(lines[0]);
-        if (lines.length > 1) {
-            setBack(lines[1]);
-        }
+      const preprocessedCanvas = await downscaleImage(file, 2200);
+      const { text, confidence } = await recognize(preprocessedCanvas);
+      console.log('OCR confidence', confidence);
+      setRawText(text);
+      const parsed = parsePairs(text);
+      setPairs(parsed);
+      if (parsed.length === 0 && text) {
+        toast({
+            variant: "default",
+            title: "Keine Paare erkannt",
+            description: "Es konnten keine Wortpaare automatisch erkannt werden. Bitte bearbeite den Rohtext manuell.",
+        });
       }
     } catch (error) {
-      console.error("Error processing image:", error);
+      console.error("Error during OCR process:", error);
       toast({
         variant: "destructive",
         title: "Fehler bei der Texterkennung",
-        description: "Das Bild konnte nicht verarbeitet werden. Bitte versuche es erneut.",
+        description: "Das Bild konnte nicht verarbeitet werden.",
       });
     } finally {
-      setIsProcessing(false);
-      setOcrProgress(null);
+      setIsLoading(false);
     }
   };
 
-  const handleSaveCard = () => {
-    // In a real app, this would call a Firestore function to save the card.
-    console.log("Saving card:", {
-        front,
-        back,
+  const handleReset = () => {
+    setPairs([]);
+    setRawText('');
+    setIsLoading(false);
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+    }
+    terminate(); // Terminate worker to free up memory
+  };
+  
+  const handleSave = async () => {
+    const selectedPairs = pairs.filter(p => p.selected).map(p => ({
+        front: p.front,
+        back: p.back,
         categoryId: selectedCategory,
-    });
+    }));
+
+    if (selectedPairs.length === 0) {
+        toast({
+            variant: "destructive",
+            title: "Keine Karten ausgewählt",
+            description: "Bitte wähle mindestens eine Karte zum Speichern aus.",
+        });
+        return;
+    }
+
+    // In a real app, this would call a Firestore function.
+    // I will add the firestore saving logic in the next step.
+    console.log("Saving pairs:", selectedPairs);
+
     toast({
-        title: "Karte gespeichert (simuliert)",
-        description: `Vorderseite: ${front}`,
+        title: `${selectedPairs.length} Karte(n) gespeichert (simuliert)`,
     });
-    // Reset for next card
-    handleRetake();
+    
+    handleReset();
   };
 
+
   const renderContent = () => {
-    if (extractedText !== null) {
+    if (isLoading) {
       return (
-        <div className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                    <Label htmlFor="front">Vorderseite (Polnisch)</Label>
-                    <Textarea id="front" value={front} onChange={(e) => setFront(e.target.value)} className="mt-1" />
-                </div>
-                <div>
-                    <Label htmlFor="back">Rückseite (Deutsch)</Label>
-                    <Textarea id="back" value={back} onChange={(e) => setBack(e.target.value)} className="mt-1" />
-                </div>
-             </div>
-             <div>
-                <Label htmlFor="category">Kategorie</Label>
-                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger id="category" className="mt-1">
-                        <SelectValue placeholder="Kategorie auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {MOCK_CATEGORIES.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-             </div>
-             <div className="mt-4">
-                <Label>Erkannter Rohtext</Label>
-                <pre className="mt-1 text-xs p-3 bg-muted rounded-md max-h-40 overflow-auto whitespace-pre-wrap font-code">{extractedText}</pre>
-             </div>
+        <div className="flex flex-col items-center justify-center text-center space-y-3">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground font-medium capitalize">{status || "Erkenne Text..."}</p>
+          <Progress value={progress} className="w-full max-w-sm" />
         </div>
       );
     }
 
-    if (capturedImage) {
-        if (isProcessing) {
-            return (
-                 <div className="flex flex-col items-center justify-center text-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                    <p className="text-muted-foreground font-medium mb-2">Texterkennung läuft...</p>
-                    <p className="text-sm text-muted-foreground capitalize mb-2">{ocrProgress?.status.replace(/_/g, ' ') || 'Initialisiere'}</p>
-                    <Progress value={ocrProgress ? ocrProgress.progress * 100 : 0} className="w-full max-w-sm" />
-                </div>
-            )
-        }
-        return (
-            <div className="relative aspect-video w-full max-w-2xl mx-auto bg-muted rounded-md overflow-hidden flex items-center justify-center">
-                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={capturedImage} alt="Captured" className="w-full h-auto" />
-            </div>
-        );
-    }
-
-    // Default camera view
-     return (
-        <div className="relative aspect-video w-full max-w-2xl mx-auto bg-muted rounded-md overflow-hidden flex items-center justify-center">
-           {hasCameraPermission === false && (
-            <Alert variant="destructive" className="absolute m-4">
-              <AlertTitle>Kamerazugriff erforderlich</AlertTitle>
-              <AlertDescription>
-                Bitte erlaube den Zugriff auf die Kamera, um diese Funktion zu nutzen.
-              </AlertDescription>
-            </Alert>
-          )}
-          <video ref={videoRef} className="w-full h-full object-cover" autoPlay muted playsInline />
-          {hasCameraPermission === null && (
-            <div className="absolute inset-0 flex items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                <p className="ml-2">Kamera wird gestartet...</p>
-            </div>
-          )}
+    if (rawText) {
+      return (
+        <div className="space-y-6">
+            {pairs.length > 0 && (
+                 <div className="space-y-3">
+                    <h3 className="font-semibold">Erkannte Wortpaare ({pairs.length})</h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+                        {pairs.map((p, i) => (
+                        <div key={i} className="p-3 border rounded-lg flex items-center gap-3 bg-muted/20">
+                            <input
+                            type="checkbox"
+                            className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+                            checked={p.selected}
+                            onChange={(e) => {
+                                const next = [...pairs];
+                                next[i] = { ...p, selected: e.target.checked };
+                                setPairs(next);
+                            }}
+                            />
+                            <input
+                            className="flex-1 px-2 py-1 border rounded-md"
+                            value={p.front}
+                            onChange={(e) => {
+                                const next = [...pairs];
+                                next[i] = { ...p, front: e.target.value };
+                                setPairs(next);
+                            }}
+                            placeholder="Vorderseite (Polnisch)"
+                            />
+                            <span>→</span>
+                            <input
+                            className="flex-1 px-2 py-1 border rounded-md"
+                            value={p.back}
+                            onChange={(e) => {
+                                const next = [...pairs];
+                                next[i] = { ...p, back: e.target.value };
+                                setPairs(next);
+                            }}
+                            placeholder="Rückseite (Deutsch)"
+                            />
+                        </div>
+                        ))}
+                    </div>
+                 </div>
+            )}
+            <details className="border rounded-lg p-3">
+              <summary className="cursor-pointer font-medium text-sm text-muted-foreground">Erkannten Rohtext anzeigen/bearbeiten</summary>
+              <textarea 
+                className="mt-2 w-full h-32 p-2 border rounded font-mono text-xs"
+                value={rawText}
+                onChange={(e) => {
+                    setRawText(e.target.value);
+                    setPairs(parsePairs(e.target.value))
+                }}
+              />
+            </details>
         </div>
-     );
-  };
-
-  const renderFooter = () => {
-    if (extractedText !== null) {
-        return (
-            <>
-               <Button variant="outline" onClick={handleRetake}><RefreshCw className="mr-2" /> Erneut aufnehmen</Button>
-               <Button onClick={handleSaveCard} disabled={!front || !back}><Save className="mr-2" /> Karte speichern</Button>
-            </>
-        )
-    }
-    
-    if (capturedImage) {
-        return (
-            <>
-                <Button variant="outline" onClick={handleRetake} disabled={isProcessing}><X className="mr-2" /> Wiederholen</Button>
-                <Button onClick={handleProcessImage} disabled={isProcessing || !workerRef.current}>
-                    {isProcessing ? <Loader2 className="mr-2 animate-spin" /> : <ScanText className="mr-2" />}
-                    {isProcessing ? "Wird verarbeitet..." : "Text erkennen"}
-                </Button>
-             </>
-        )
+      );
     }
 
     return (
-        <Button onClick={handleCapture} disabled={hasCameraPermission !== true}>
-            <Camera className="mr-2" /> Foto aufnehmen
-        </Button>
-    )
-  }
+        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+            <h3 className="text-lg font-semibold text-muted-foreground">Bereit zum Scannen</h3>
+            <p className="text-sm text-muted-foreground mb-4">Wähle ein Foto von deinem Gerät aus.</p>
+            <Button onClick={() => fileInputRef.current?.click()}>
+                Foto auswählen
+            </Button>
+        </div>
+    );
+  };
+
 
   return (
     <div className="space-y-8">
@@ -291,19 +239,26 @@ export default function AddFromPhotoPage() {
         <CardHeader>
           <CardTitle>Karte aus Foto hinzufügen</CardTitle>
           <CardDescription>
-            {extractedText !== null
-              ? "Überprüfe den erkannten Text und speichere deine Karte."
-              : capturedImage
-              ? "Das Bild wurde erfasst. Bist du bereit für die Texterkennung?"
-              : "Richte deine Kamera auf ein Wort oder einen Satz, um eine neue Karte zu erstellen."}
+            Wähle ein Bild aus, um es per OCR zu analysieren und daraus neue Karten zu erstellen.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-            {renderContent()}
-           <canvas ref={canvasRef} className="hidden" />
+        <CardContent className="min-h-[250px] flex items-center justify-center">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                className="hidden" 
+                accept="image/*"
+            />
+          {renderContent()}
         </CardContent>
-        <CardFooter className="flex justify-center gap-4 border-t pt-6">
-          {renderFooter()}
+        <CardFooter className="flex justify-end gap-4 border-t pt-6">
+            {rawText && (
+                <>
+                    <Button variant="ghost" onClick={handleReset}><RefreshCw className="mr-2"/> Abbrechen / Neu</Button>
+                    <Button onClick={handleSave} disabled={isLoading || pairs.filter(p=>p.selected).length === 0}><Save className="mr-2"/> Ausgewählte speichern</Button>
+                </>
+            )}
         </CardFooter>
       </Card>
     </div>
