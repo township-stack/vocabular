@@ -55,9 +55,9 @@ export function useTesseractOcr() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const recognize = useCallback(async (fileOrCanvas: File | HTMLCanvasElement | string): Promise<OcrResult> => {
+  const recognize = useCallback(async (canvas: HTMLCanvasElement): Promise<OcrResult> => {
     const worker = await ensureWorker();
-    const { data } = await worker.recognize(fileOrCanvas);
+    const { data } = await worker.recognize(canvas);
     return { text: data.text, confidence: data.confidence ?? 0 };
   }, [ensureWorker]);
 

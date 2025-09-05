@@ -67,7 +67,7 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
 
 export default function AddFromPhotoPage() {
   const { toast } = useToast();
-  const { recognize, progress, status, terminate } = useTesseractOcr();
+  const { recognize, progress, status, terminate, isReady } = useTesseractOcr();
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [rawText, setRawText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -78,14 +78,23 @@ export default function AddFromPhotoPage() {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
+    await processImage(file);
+  };
+  
+  const processImage = async (imageSource: File | HTMLCanvasElement) => {
     setIsLoading(true);
     setPairs([]);
     setRawText('');
     
     try {
-      const preprocessedCanvas = await downscaleImage(file, 2200);
-      const { text, confidence } = await recognize(preprocessedCanvas);
+      let imageToProcess: HTMLCanvasElement;
+      if (imageSource instanceof File) {
+        imageToProcess = await downscaleImage(imageSource, 2200);
+      } else {
+        imageToProcess = imageSource;
+      }
+      
+      const { text, confidence } = await recognize(imageToProcess);
       console.log('OCR confidence', confidence);
       setRawText(text);
       const parsed = parsePairs(text);
@@ -107,7 +116,8 @@ export default function AddFromPhotoPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }
+
 
   const handleReset = () => {
     setPairs([]);
@@ -135,12 +145,15 @@ export default function AddFromPhotoPage() {
         return;
     }
 
-    // In a real app, this would call a Firestore function.
-    // I will add the firestore saving logic in the next step.
-    console.log("Saving pairs:", selectedPairs);
+    // Currently only logging (cleanly separated)
+    console.log("[OCR] Save candidates:", selectedPairs);
+
+    // Later: enable real saving
+    // await savePairs(selectedPairs);
 
     toast({
-        title: `${selectedPairs.length} Karte(n) gespeichert (simuliert)`,
+        title: "Vorschläge gespeichert (Demo)",
+        description: `${selectedPairs.length} Einträge wurden (noch lokal) protokolliert.`,
     });
     
     handleReset();
@@ -148,12 +161,12 @@ export default function AddFromPhotoPage() {
 
 
   const renderContent = () => {
-    if (isLoading) {
+    if (isLoading || !isReady) {
       return (
         <div className="flex flex-col items-center justify-center text-center space-y-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground font-medium capitalize">{status || "Erkenne Text..."}</p>
-          <Progress value={progress} className="w-full max-w-sm" />
+          <p className="text-muted-foreground font-medium capitalize">{status || "Initialisiere..."}</p>
+          {isLoading && <Progress value={progress} className="w-full max-w-sm" />}
         </div>
       );
     }
@@ -280,23 +293,9 @@ export default function AddFromPhotoPage() {
       <CameraModal
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
-        onCapture={async (canvas) => {
+        onCapture={(canvas) => {
             setCameraOpen(false);
-            setIsLoading(true);
-            try {
-                const { text } = await recognize(canvas);
-                setRawText(text);
-                setPairs(parsePairs(text));
-            } catch (error) {
-                console.error("Error during OCR process:", error);
-                toast({
-                    variant: "destructive",
-                    title: "Fehler bei der Texterkennung",
-                    description: "Das Kamerabild konnte nicht verarbeitet werden.",
-                });
-            } finally {
-                setIsLoading(false);
-            }
+            processImage(canvas);
         }}
       />
     </div>
