@@ -317,7 +317,7 @@ export default function AddFromPhotoPage() {
           <CardTitle>Karte aus Foto hinzufügen</CardTitle>
           <CardDescription>
             Wähle ein Bild aus, um es per OCR zu analysieren und daraus neue Karten zu erstellen.
-          </Description>
+          </CardDescription>
         </CardHeader>
         <CardContent className="min-h-[250px] flex items-center justify-center">
           {renderContent()}
