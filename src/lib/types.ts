@@ -7,8 +7,7 @@ export interface Card {
   ease: number;
   interval: number;
   due: string | null;
-  categoryId?: string; // Keep for potential future use with categories
-  createdAt?: string; // Keep for potential future use
+  createdAt?: string; 
 }
 
 export interface Category {

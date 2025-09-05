@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Save, RefreshCw, Camera } from "lucide-react";
 import { v4 as uuid } from "uuid";
@@ -15,7 +16,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { MOCK_CATEGORIES } from "@/lib/mock-data";
 import { useTesseractOcr } from "@/hooks/useTesseractOcr";
 import { Progress } from "@/components/ui/progress";
 import CameraModal from "@/components/camera-modal";
@@ -104,11 +104,11 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
 
 export default function AddFromPhotoPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const { recognize, progress, status, terminate, isReady } = useTesseractOcr();
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [rawText, setRawText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
 
@@ -170,7 +170,6 @@ export default function AddFromPhotoPage() {
     const selectedPairs = pairs.filter(p => p.selected).map(p => ({
         front: p.front,
         back: p.back,
-        // categoryId: selectedCategory, // Category logic can be added later
     }));
 
     if (selectedPairs.length === 0) {
@@ -186,9 +185,10 @@ export default function AddFromPhotoPage() {
         savePairsLocal(selectedPairs);
         toast({
             title: "Karten gespeichert!",
-            description: `${selectedPairs.length} neue Karten wurden lokal gespeichert.`,
+            description: `${selectedPairs.length} neue Karten wurden hinzugefügt.`,
         });
         handleReset();
+        router.push('/study');
     } catch (error) {
         console.error("Error saving pairs:", error);
         toast({

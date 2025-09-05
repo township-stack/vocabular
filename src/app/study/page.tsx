@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -35,7 +35,7 @@ function getDueCards(): CardType[] {
          .sort((a,b) => new Date(a.due || 0).getTime() - new Date(b.due || 0).getTime());
 }
 
-function reviewCard(card: CardType, quality: number) {
+function reviewCard(card: CardType, quality: number): CardType {
   let { reps, ease, interval } = card;
   const minEase = 1.3;
 
@@ -44,15 +44,21 @@ function reviewCard(card: CardType, quality: number) {
     interval = 1;
   } else {
     reps = (reps || 0) + 1;
-    if (reps === 1) interval = 1;
-    else if (reps === 2) interval = 6;
-    else interval = Math.round((interval || 1) * ease);
+    if (reps === 1) {
+        interval = 1;
+    } else if (reps === 2) {
+        interval = 6;
+    } else {
+        interval = Math.round((interval || 1) * ease);
+    }
 
     ease = ease + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02);
     if (ease < minEase) ease = minEase;
   }
 
   const nextDue = new Date();
+  // Set time to midnight to ensure day-based intervals
+  nextDue.setHours(0, 0, 0, 0); 
   nextDue.setDate(nextDue.getDate() + interval);
 
   const updated: CardType = {
@@ -63,8 +69,9 @@ function reviewCard(card: CardType, quality: number) {
     due: nextDue.toISOString(),
   };
 
-  const cards = loadCards().map(c => (c.id === card.id ? updated : c));
-  saveCards(cards);
+  const allCards = loadCards();
+  const updatedCards = allCards.map(c => (c.id === card.id ? updated : c));
+  saveCards(updatedCards);
 
   return updated;
 }
@@ -87,6 +94,9 @@ export default function StudyPage() {
     if (!currentCard) return;
 
     reviewCard(currentCard, quality);
+
+    // Instead of re-filtering the whole deck, just remove the reviewed card
+    // and take the next one from the shuffled queue.
     const nextQueue = queue.slice(1);
     setQueue(nextQueue);
     setCurrentCard(nextQueue[0] || null);
@@ -116,7 +126,7 @@ export default function StudyPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex-grow flex items-center justify-center">
-                 <div className="text-4xl font-bold text-center break-words">
+                 <div className="text-4xl font-bold text-center break-words px-4">
                     {showBack ? currentCard.back : currentCard.front}
                  </div>
             </CardContent>
