@@ -8,9 +8,15 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { MOCK_CATEGORIES } from "@/lib/mock-data";
+import { MOCK_CATEGORIES, MOCK_CARDS } from "@/lib/mock-data";
 
 export default function CategoryList() {
+  const categoryCardCounts = MOCK_CARDS.reduce((acc, card) => {
+    acc[card.categoryId] = (acc[card.categoryId] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+
   return (
     <Card className="h-full">
       <CardHeader>
@@ -34,7 +40,7 @@ export default function CategoryList() {
               >
                 <span className="font-medium text-sm">{category.name}</span>
                 <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-full">
-                  {category.cardCount} cards
+                  {categoryCardCounts[category.id] || 0} cards
                 </span>
               </div>
             ))}
