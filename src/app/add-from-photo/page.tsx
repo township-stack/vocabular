@@ -118,7 +118,7 @@ export default function AddFromPhotoPage() {
     await processImage(file);
   };
   
-  const processImage = async (imageSource: File | HTMLCanvasElement) => {
+  const processImage = useCallback(async (imageSource: File | HTMLCanvasElement) => {
     setIsLoading(true);
     setPairs([]);
     setRawText('');
@@ -153,7 +153,7 @@ export default function AddFromPhotoPage() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [recognize, toast]);
 
 
   const handleReset = () => {
@@ -287,12 +287,14 @@ export default function AddFromPhotoPage() {
                 <Button
                     variant="default"
                     onClick={() => fileInputRef.current?.click()}
+                    disabled={isLoading || !isReady}
                 >
                     Foto/Datei wählen
                 </Button>
                 <Button
                     variant="outline"
                     onClick={() => setCameraOpen(true)}
+                    disabled={isLoading || !isReady}
                 >
                     <Camera className="mr-2 h-4 w-4" />
                     Foto aufnehmen
@@ -315,7 +317,7 @@ export default function AddFromPhotoPage() {
           <CardTitle>Karte aus Foto hinzufügen</CardTitle>
           <CardDescription>
             Wähle ein Bild aus, um es per OCR zu analysieren und daraus neue Karten zu erstellen.
-          </CardDescription>
+          </Description>
         </CardHeader>
         <CardContent className="min-h-[250px] flex items-center justify-center">
           {renderContent()}

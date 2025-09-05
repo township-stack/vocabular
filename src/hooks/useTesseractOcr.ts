@@ -44,7 +44,7 @@ export function useTesseractOcr() {
     return workerRef.current;
   }, [isReady]);
 
-  // Pre-initialize the worker
+  // Pre-initialize the worker on mount.
   useEffect(() => {
     ensureWorker();
     
@@ -55,9 +55,9 @@ export function useTesseractOcr() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const recognize = useCallback(async (canvas: HTMLCanvasElement): Promise<OcrResult> => {
+  const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<OcrResult> => {
     const worker = await ensureWorker();
-    const { data } = await worker.recognize(canvas);
+    const { data } = await worker.recognize(imageSource);
     return { text: data.text, confidence: data.confidence ?? 0 };
   }, [ensureWorker]);
 
