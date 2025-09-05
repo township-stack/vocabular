@@ -7,7 +7,9 @@ export interface Card {
   ease: number;
   interval: number;
   due: string | null;
+  dueDay?: string;        // YYYY-MM-DD for stable "today" comparison
   createdAt?: string; 
+  categoryId?: string;
 }
 
 export interface Category {
@@ -50,3 +52,5 @@ export interface StudySession {
   categoryFilter?: string;
   notes?: string;
 }
+
+    

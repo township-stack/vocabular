@@ -27,7 +27,12 @@ import type { Card as CardType } from "@/lib/types";
 function loadCards(): CardType[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem("cards") ?? "[]");
+    const cards = JSON.parse(localStorage.getItem("cards") ?? "[]");
+    // Ensure dueDay is set for old cards for backwards compatibility
+    return cards.map((c: CardType) => ({
+        ...c,
+        dueDay: c.dueDay || c.due?.split('T')[0],
+    }));
   } catch {
     return [];
   }
@@ -37,9 +42,11 @@ function saveCards(cards: CardType[]) {
   localStorage.setItem("cards", JSON.stringify(cards));
 }
 
-function savePairsLocal(pairs: { front: string; back: string }[]) {
+function savePairsLocal(pairs: { front: string; back: string }[], categoryId?: string) {
   const existing = loadCards();
-  const now = new Date().toISOString();
+  const now = new Date();
+  const todayYMD = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  
   const newCards: CardType[] = pairs.map(p => ({
     id: uuid(),
     front: p.front,
@@ -47,8 +54,10 @@ function savePairsLocal(pairs: { front: string; back: string }[]) {
     reps: 0,
     ease: 2.5,
     interval: 0,
-    due: now, // Ready for review immediately
-    createdAt: now,
+    due: now.toISOString(), // Ready for review immediately
+    dueDay: todayYMD,
+    createdAt: now.toISOString(),
+    categoryId: categoryId || '1', // Default to 'Allgemein'
   }));
   saveCards([...existing, ...newCards]);
 }
@@ -343,3 +352,5 @@ export default function AddFromPhotoPage() {
     </div>
   );
 }
+
+    

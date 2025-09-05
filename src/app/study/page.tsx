@@ -11,15 +11,40 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Button } from "@/components/ui/button";
 import type { Card as CardType } from "@/lib/types";
+import { MOCK_CATEGORIES } from "@/lib/mock-data";
+
+
+// --- Date Helpers ---
+const toYMD = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+const plusDaysYMD = (days: number): string => {
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + days);
+  return toYMD(d);
+};
+
 
 // --- Local Storage & SRS Logic ---
-
 function loadCards(): CardType[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem("cards") ?? "[]");
+    const cards = JSON.parse(localStorage.getItem("cards") ?? "[]") as CardType[];
+    // Ensure dueDay is set for old cards for backwards compatibility
+     return cards.map((c: CardType) => ({
+        ...c,
+        dueDay: c.dueDay || c.due?.split('T')[0] || toYMD(),
+    }));
   } catch {
     return [];
   }
@@ -29,10 +54,15 @@ function saveCards(cards: CardType[]) {
   localStorage.setItem("cards", JSON.stringify(cards));
 }
 
-function getDueCards(): CardType[] {
-  const now = new Date();
-  return loadCards().filter(c => !c.due || new Date(c.due) <= now)
-         .sort((a,b) => new Date(a.due || 0).getTime() - new Date(b.due || 0).getTime());
+
+function getDueCards(categoryId?: string): CardType[] {
+  const today = toYMD();
+  return loadCards()
+        .filter(c =>
+            (!categoryId || c.categoryId === categoryId) &&
+            (c.dueDay! <= today)
+        )
+        .sort((a,b) => new Date(a.due || 0).getTime() - new Date(b.due || 0).getTime());
 }
 
 function reviewCard(card: CardType, quality: number): CardType {
@@ -55,18 +85,14 @@ function reviewCard(card: CardType, quality: number): CardType {
     ease = ease + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02);
     if (ease < minEase) ease = minEase;
   }
-
-  const nextDue = new Date();
-  // Set time to midnight to ensure day-based intervals
-  nextDue.setHours(0, 0, 0, 0); 
-  nextDue.setDate(nextDue.getDate() + interval);
-
+  
   const updated: CardType = {
     ...card,
     reps,
     ease,
     interval,
-    due: nextDue.toISOString(),
+    due: new Date(Date.now() + interval * 864e5).toISOString(),
+    dueDay: plusDaysYMD(interval),
   };
 
   const allCards = loadCards();
@@ -78,17 +104,21 @@ function reviewCard(card: CardType, quality: number): CardType {
 
 
 // --- Component ---
-
 export default function StudyPage() {
   const [queue, setQueue] = useState<CardType[]>([]);
   const [currentCard, setCurrentCard] = useState<CardType | null>(null);
   const [showBack, setShowBack] = useState(false);
-  
-  useEffect(() => {
-    const due = getDueCards();
+  const [category, setCategory] = useState<string | undefined>(undefined);
+
+  const refreshQueue = useCallback((cat?: string) => {
+    const due = getDueCards(cat);
     setQueue(due);
     setCurrentCard(due[0] || null);
   }, []);
+  
+  useEffect(() => {
+    refreshQueue(category);
+  }, [category, refreshQueue]);
 
   const grade = useCallback((quality: number) => {
     if (!currentCard) return;
@@ -96,7 +126,6 @@ export default function StudyPage() {
     reviewCard(currentCard, quality);
 
     // Instead of re-filtering the whole deck, just remove the reviewed card
-    // and take the next one from the shuffled queue.
     const nextQueue = queue.slice(1);
     setQueue(nextQueue);
     setCurrentCard(nextQueue[0] || null);
@@ -117,13 +146,29 @@ export default function StudyPage() {
 
     return (
         <>
-            <CardHeader>
-              <CardTitle className="text-2xl">
-                Lernsitzung ({queue.length} Karten übrig)
-              </CardTitle>
-              <CardDescription>
-                {showBack ? "Wie gut konntest du dich erinnern?" : "Was ist die Übersetzung?"}
-              </CardDescription>
+            <CardHeader className="flex-row justify-between items-center">
+              <div>
+                <CardTitle className="text-2xl">
+                    Lernsitzung ({queue.length} übrig)
+                </CardTitle>
+                <CardDescription>
+                    {showBack ? "Wie gut konntest du dich erinnern?" : "Was ist die Übersetzung?"}
+                </CardDescription>
+              </div>
+              <Select
+                value={category}
+                onValueChange={(value) => setCategory(value === 'all' ? undefined : value)}
+              >
+                <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Kategorie wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">Alle Kategorien</SelectItem>
+                    {MOCK_CATEGORIES.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </CardHeader>
             <CardContent className="flex-grow flex items-center justify-center">
                  <div className="text-4xl font-bold text-center break-words px-4">
@@ -173,3 +218,5 @@ export default function StudyPage() {
     </div>
   );
 }
+
+    
