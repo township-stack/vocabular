@@ -4,7 +4,6 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Save, RefreshCw, Camera } from "lucide-react";
-import { v4 as uuid } from "uuid";
 
 import {
   Card,
@@ -20,47 +19,7 @@ import { useTesseractOcr } from "@/hooks/useTesseractOcr";
 import { Progress } from "@/components/ui/progress";
 import CameraModal from "@/components/camera-modal";
 import type { Card as CardType } from "@/lib/types";
-
-
-// --- Local Storage Helpers ---
-
-function loadCards(): CardType[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const cards = JSON.parse(localStorage.getItem("cards") ?? "[]");
-    // Ensure dueDay is set for old cards for backwards compatibility
-    return cards.map((c: CardType) => ({
-        ...c,
-        dueDay: c.dueDay || c.due?.split('T')[0],
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function saveCards(cards: CardType[]) {
-  localStorage.setItem("cards", JSON.stringify(cards));
-}
-
-function savePairsLocal(pairs: { front: string; back: string }[], categoryId?: string) {
-  const existing = loadCards();
-  const now = new Date();
-  const todayYMD = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  
-  const newCards: CardType[] = pairs.map(p => ({
-    id: uuid(),
-    front: p.front,
-    back: p.back,
-    reps: 0,
-    ease: 2.5,
-    interval: 0,
-    due: now.toISOString(), // Ready for review immediately
-    dueDay: todayYMD,
-    createdAt: now.toISOString(),
-    categoryId: categoryId || '1', // Default to 'Allgemein'
-  }));
-  saveCards([...existing, ...newCards]);
-}
+import { savePairsLocal } from "@/lib/local-storage";
 
 
 // --- Component ---
@@ -210,7 +169,7 @@ export default function AddFromPhotoPage() {
 
 
   const renderContent = () => {
-    if (isLoading || !isReady) {
+    if (isLoading || (!isReady && status)) {
       return (
         <div className="flex flex-col items-center justify-center text-center space-y-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -296,14 +255,14 @@ export default function AddFromPhotoPage() {
                 <Button
                     variant="default"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isLoading || !isReady}
+                    disabled={isLoading}
                 >
                     Foto/Datei wählen
                 </Button>
                 <Button
                     variant="outline"
                     onClick={() => setCameraOpen(true)}
-                    disabled={isLoading || !isReady}
+                    disabled={isLoading}
                 >
                     <Camera className="mr-2 h-4 w-4" />
                     Foto aufnehmen
@@ -352,5 +311,3 @@ export default function AddFromPhotoPage() {
     </div>
   );
 }
-
-    
