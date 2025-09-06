@@ -27,9 +27,9 @@ type Pair = { front: string; back: string; };
 
 function parsePairs(raw: string): Pair[] {
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
   const out: Pair[] = [];
   for (const line of lines) {
+    // Regex, um polnische und deutsche Wörter zu trennen, die durch gängige Trennzeichen getrennt sind
     const m = line.match(/^(.*?)\s*(?:[-–—:;→]|=>)\s*(.+)$/);
     if (m && m[1]?.trim() && m[2]?.trim()) {
       out.push({ front: m[1].trim(), back: m[2].trim() });
@@ -38,9 +38,22 @@ function parsePairs(raw: string): Pair[] {
   return out;
 }
 
-async function downscaleImage(file: File, maxDim = 2200): Promise<HTMLCanvasElement> {
+// Skaliert ein Bild per Canvas herunter, falls es zu groß ist (Bonus-Feature aus dem Megaprompt)
+async function downscaleImage(file: File, maxDim = 2500): Promise<HTMLCanvasElement> {
   const img = await fileToImage(file);
   const { width, height } = fitContain(img.width, img.height, maxDim);
+  
+  if (width === img.width && height === img.height) {
+     // Kein Downscaling nötig, Original-Bild in Canvas zeichnen
+     const canvas = document.createElement('canvas');
+     canvas.width = img.width;
+     canvas.height = img.height;
+     const ctx = canvas.getContext('2d')!;
+     ctx.drawImage(img, 0, 0, img.width, img.height);
+     return canvas;
+  }
+
+  console.log(`Downscaling image from ${img.width}x${img.height} to ${width}x${height}`);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -59,7 +72,7 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(url); // Wichtig: Speicher freigeben
       res(img);
     };
     img.onerror = rej;
@@ -103,15 +116,15 @@ export default function AddFromPhotoPage() {
     try {
       let imageToProcess: HTMLCanvasElement;
       if (imageSource instanceof File) {
-        imageToProcess = await downscaleImage(imageSource, 2200);
+        imageToProcess = await downscaleImage(imageSource);
       } else {
         imageToProcess = imageSource;
       }
       
-      const result = await recognize(imageToProcess);
-      if (!result) throw new Error("Texterkennung fehlgeschlagen");
+      const recognizedText = await recognize(imageToProcess);
+      if (recognizedText === null) throw new Error("Texterkennung fehlgeschlagen. Recognize gab null zurück.");
 
-      const pairs = parsePairs(result.text);
+      const pairs = parsePairs(recognizedText);
 
       if (pairs.length > 0) {
         savePairsLocal(pairs, selectedCategory);
@@ -147,13 +160,14 @@ export default function AddFromPhotoPage() {
 
   const renderContent = () => {
     const isLoading = isProcessing || !isReady;
+    const loadingText = isProcessing ? status : (isReady ? 'Bereit' : status);
 
     if (isLoading) {
       return (
         <div className="flex flex-col items-center justify-center text-center space-y-4 p-8">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
-          <p className="text-muted-foreground font-medium capitalize">{status || "Initialisiere..."}</p>
-          <Progress value={progress} className="w-full max-w-sm" />
+          <p className="text-muted-foreground font-medium capitalize">{loadingText}</p>
+          {isProcessing && <Progress value={progress} className="w-full max-w-sm" />}
         </div>
       );
     }
@@ -168,9 +182,14 @@ export default function AddFromPhotoPage() {
                     <p className="text-muted-foreground">
                         Sie wurden zur Kategorie "{lastResult.categoryName}" gespeichert.
                     </p>
-                    <Button onClick={() => router.push('/study')} size="lg">
-                        Jetzt lernen
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button onClick={() => setLastResult(null)} variant="outline">
+                            Weitere scannen
+                        </Button>
+                        <Button onClick={() => router.push('/study')} size="lg">
+                            Jetzt lernen
+                        </Button>
+                    </div>
                 </>
             ) : (
                  <>
@@ -187,7 +206,6 @@ export default function AddFromPhotoPage() {
         </div>
       );
     }
-
 
     return (
         <div className="text-center py-8 px-4 flex flex-col items-center gap-6">
@@ -237,7 +255,6 @@ export default function AddFromPhotoPage() {
     );
   };
 
-
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-10rem)]">
         <Card className="w-full max-w-lg mx-auto">
@@ -246,7 +263,7 @@ export default function AddFromPhotoPage() {
             </CardContent>
              <CardFooter className="flex-col items-center justify-center gap-2 border-t pt-4 text-center">
                  <p className="text-xs text-muted-foreground">
-                    Status: {!isReady ? `${status}...` : "Bereit zum Scannen."}
+                    Status: {isReady ? "Bereit zum Scannen." : status}
                  </p>
                  <p className="text-xs text-muted-foreground">
                     Tipp: Für beste Ergebnisse flach fotografieren und auf gute Beleuchtung achten.
