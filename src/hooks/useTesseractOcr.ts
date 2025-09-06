@@ -13,44 +13,33 @@ export function useTesseractOcr() {
   const [status, setStatus] = useState<string>('');
   const [isReady, setIsReady] = useState(false);
 
-  const ensureWorker = useCallback(async () => {
-    if (workerRef.current && isReady) {
-      console.log("Worker already ready.");
-      return workerRef.current;
+  const initializeWorker = useCallback(async () => {
+    if (workerRef.current) {
+      return;
     }
-
-    if (status && !status.includes('fehlgeschlagen') && !status.includes('Bereit')) {
-        console.log("Worker initialization already in progress.");
-        return;
-    }
-
-
-    setIsReady(false);
-    setStatus('Worker wird initialisiert...');
     
+    setStatus('Worker wird initialisiert...');
     try {
       const worker = await createWorker({
         workerPath: '/tesseract/worker.min.js',
         corePath: '/tesseract/tesseract-core.wasm.js',
         langPath: '/tessdata',
       });
-
+      
+      workerRef.current = worker;
       setStatus('Sprachmodelle werden geladen...');
       await worker.loadLanguage('pol+deu');
       await worker.initialize('pol+deu');
       
-      workerRef.current = worker;
       setIsReady(true);
       setStatus('Bereit');
-      return workerRef.current;
     } catch (error) {
         console.error("Error initializing Tesseract worker:", error);
         setStatus("Initialisierung fehlgeschlagen");
         setIsReady(false);
         workerRef.current = null; // Reset on failure
-        return null;
     }
-  }, [isReady, status]);
+  }, []);
 
   const terminate = useCallback(async () => {
     if (workerRef.current) {
@@ -63,7 +52,7 @@ export function useTesseractOcr() {
   }, []);
 
   useEffect(() => {
-    ensureWorker();
+    initializeWorker();
     return () => {
       terminate();
     };
@@ -71,14 +60,13 @@ export function useTesseractOcr() {
   }, []);
 
   const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<OcrResult | null> => {
-    const worker = await ensureWorker();
-    if (!worker) {
-        throw new Error("Tesseract Worker ist nicht verfügbar.");
+    if (!workerRef.current || !isReady) {
+        throw new Error("Tesseract Worker ist nicht bereit.");
     }
-
-    const recognizePromise = worker.recognize(imageSource);
     
-    // Tesseract.js v5 uses a subscription model on the worker for progress updates.
+    const worker = workerRef.current;
+    
+    // Tesseract.js v5+ uses a subscription model on the worker for progress updates.
     const subscription = worker.subscribe(m => {
        if (m.status === 'recognizing text') {
            setStatus('Texterkennung läuft...');
@@ -86,11 +74,11 @@ export function useTesseractOcr() {
        }
     });
 
-    const { data } = await recognizePromise;
+    const { data } = await worker.recognize(imageSource);
     subscription.unsubscribe(); // Clean up the subscription
     
     return { text: data.text, confidence: data.confidence ?? 0 };
-  }, [ensureWorker]);
+  }, [isReady]);
 
   return { recognize, progress, status, terminate, isReady };
 }
