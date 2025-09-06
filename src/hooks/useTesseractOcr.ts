@@ -19,8 +19,7 @@ export function useTesseractOcr() {
       return workerRef.current;
     }
 
-    // Prevent re-initialization if already in progress
-    if (status && status !== 'Bereit' && status !== 'Initialisierung fehlgeschlagen') {
+    if (status && !status.includes('fehlgeschlagen') && !status.includes('Bereit')) {
         console.log("Worker initialization already in progress.");
         return;
     }
@@ -34,7 +33,6 @@ export function useTesseractOcr() {
         workerPath: '/tesseract/worker.min.js',
         corePath: '/tesseract/tesseract-core.wasm.js',
         langPath: '/tessdata',
-        // The logger cannot be used here as it is not cloneable and causes a postMessage error.
       });
 
       setStatus('Sprachmodelle werden geladen...');
@@ -64,7 +62,6 @@ export function useTesseractOcr() {
     }
   }, []);
 
-  // Pre-initialize on mount for better UX.
   useEffect(() => {
     ensureWorker();
     return () => {
@@ -81,8 +78,7 @@ export function useTesseractOcr() {
 
     const recognizePromise = worker.recognize(imageSource);
     
-    // Tesseract.js v5 no longer uses the logger for progress, but a subscription model on the promise.
-    // This is how you can get progress updates now.
+    // Tesseract.js v5 uses a subscription model on the worker for progress updates.
     const subscription = worker.subscribe(m => {
        if (m.status === 'recognizing text') {
            setStatus('Texterkennung läuft...');
