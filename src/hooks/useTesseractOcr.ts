@@ -20,10 +20,11 @@ export function useTesseractOcr() {
     }
 
     // Prevent re-initialization if already in progress
-    if (status === 'Worker wird initialisiert...' || status === 'Sprachmodelle werden geladen...') {
-      console.log("Worker initialization already in progress.");
-      return;
+    if (status && status !== 'Bereit' && status !== 'Initialisierung fehlgeschlagen') {
+        console.log("Worker initialization already in progress.");
+        return;
     }
+
 
     setIsReady(false);
     setStatus('Worker wird initialisiert...');
@@ -33,13 +34,7 @@ export function useTesseractOcr() {
         workerPath: '/tesseract/worker.min.js',
         corePath: '/tesseract/tesseract-core.wasm.js',
         langPath: '/tessdata',
-        logger: (m) => {
-          if (m.status) {
-              const friendlyStatus = m.status.charAt(0).toUpperCase() + m.status.slice(1).replace(/_/g, ' ');
-              setStatus(friendlyStatus);
-          }
-          if (m.progress != null) setProgress(Math.round(m.progress * 100));
-        },
+        // The logger cannot be used here as it is not cloneable and causes a postMessage error.
       });
 
       setStatus('Sprachmodelle werden geladen...');
@@ -83,7 +78,21 @@ export function useTesseractOcr() {
     if (!worker) {
         throw new Error("Tesseract Worker ist nicht verfügbar.");
     }
-    const { data } = await worker.recognize(imageSource);
+
+    const recognizePromise = worker.recognize(imageSource);
+    
+    // Tesseract.js v5 no longer uses the logger for progress, but a subscription model on the promise.
+    // This is how you can get progress updates now.
+    const subscription = worker.subscribe(m => {
+       if (m.status === 'recognizing text') {
+           setStatus('Texterkennung läuft...');
+           setProgress(Math.round(m.progress * 100));
+       }
+    });
+
+    const { data } = await recognizePromise;
+    subscription.unsubscribe(); // Clean up the subscription
+    
     return { text: data.text, confidence: data.confidence ?? 0 };
   }, [ensureWorker]);
 
