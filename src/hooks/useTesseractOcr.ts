@@ -7,65 +7,80 @@ type OcrResult = {
   confidence: number; // 0-100
 };
 
+// Singleton pattern for the worker
+let workerSingleton: Worker | null = null;
+let workerInitializationPromise: Promise<Worker> | null = null;
+
+const initializeWorker = async (setStatus: (status: string) => void): Promise<Worker> => {
+    if (workerSingleton) {
+        return workerSingleton;
+    }
+
+    if (workerInitializationPromise) {
+        return workerInitializationPromise;
+    }
+
+    workerInitializationPromise = (async () => {
+        try {
+            setStatus('Worker wird initialisiert...');
+            const worker = await createWorker({
+                workerPath: '/tesseract/worker.min.js',
+                corePath: '/tesseract/tesseract-core.wasm.js',
+                langPath: '/tessdata',
+            });
+
+            setStatus('Sprachmodelle werden geladen (pol+deu)...');
+            await worker.loadLanguage('pol+deu');
+            await worker.initialize('pol+deu');
+
+            workerSingleton = worker;
+            setStatus('Bereit');
+            return worker;
+        } catch (error) {
+            console.error("Tesseract Worker-Initialisierung fehlgeschlagen:", error);
+            setStatus("Fehler bei Initialisierung");
+            workerInitializationPromise = null; // Reset for next attempt
+            throw error;
+        }
+    })();
+
+    return workerInitializationPromise;
+};
+
+
 export function useTesseractOcr() {
-  const workerRef = useRef<Worker | null>(null);
   const [progress, setProgress] = useState<number>(0);
-  const [status, setStatus] = useState<string>('');
+  const [status, setStatus] = useState<string>('Nicht initialisiert');
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    let isMounted = true;
+    
+    const updateStatus = (newStatus: string) => {
+        if(isMounted) setStatus(newStatus);
+    };
 
-    const initialize = async () => {
-      setStatus('Worker wird initialisiert...');
-      const worker = await createWorker({
-        workerPath: '/tesseract/worker.min.js',
-        corePath: '/tesseract/tesseract-core.wasm.js',
-        langPath: '/tessdata',
+    initializeWorker(updateStatus)
+      .then(() => {
+        if(isMounted) setIsReady(true);
+      })
+      .catch(() => {
+         if(isMounted) setIsReady(false);
       });
 
-      if (cancelled) {
-        await worker.terminate();
-        return;
-      }
-      
-      workerRef.current = worker;
-      setStatus('Sprachmodelle werden geladen...');
-      await worker.loadLanguage('pol+deu');
-      await worker.initialize('pol+deu');
-      
-      if (cancelled) {
-        await worker.terminate();
-        return;
-      }
-
-      setIsReady(true);
-      setStatus('Bereit');
-    };
-
-    initialize().catch(error => {
-      console.error("Error initializing Tesseract worker:", error);
-      setStatus("Initialisierung fehlgeschlagen");
-      setIsReady(false);
-      workerRef.current = null;
-    });
-
     return () => {
-      cancelled = true;
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
+        isMounted = false;
     };
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, []); 
 
   const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<OcrResult | null> => {
-    if (!workerRef.current || !isReady) {
-        console.error("Recognize called but worker is not ready.");
-        throw new Error("Tesseract Worker ist nicht bereit.");
+    if (!workerSingleton || !isReady) {
+        console.error("Recognize aufgerufen, aber Worker ist nicht bereit.");
+        setStatus("Fehler: Worker nicht bereit");
+        return null;
     }
     
-    const worker = workerRef.current;
+    const worker = workerSingleton;
     
     const subscription = worker.subscribe(m => {
        if (m.status === 'recognizing text') {
@@ -74,10 +89,18 @@ export function useTesseractOcr() {
        }
     });
 
-    const { data } = await worker.recognize(imageSource);
-    subscription.unsubscribe();
-    
-    return { text: data.text, confidence: data.confidence ?? 0 };
+    try {
+        const { data } = await worker.recognize(imageSource);
+        return { text: data.text, confidence: data.confidence ?? 0 };
+    } catch (error) {
+        console.error("Fehler bei der Tesseract-Texterkennung:", error);
+        setStatus("Fehler bei Texterkennung");
+        return null;
+    } finally {
+        subscription.unsubscribe();
+        setStatus("Bereit");
+        setProgress(0);
+    }
   }, [isReady]);
 
   return { recognize, progress, status, isReady };
