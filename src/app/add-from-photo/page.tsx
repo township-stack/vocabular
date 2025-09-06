@@ -18,8 +18,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useTesseractOcr } from "@/hooks/useTesseractOcr";
 import { Progress } from "@/components/ui/progress";
 import CameraModal from "@/components/camera-modal";
-import type { Card as CardType } from "@/lib/types";
 import { savePairsLocal } from "@/lib/local-storage";
+import { MOCK_CATEGORIES } from "@/lib/mock-data";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 
 // --- Component ---
@@ -76,9 +77,10 @@ export default function AddFromPhotoPage() {
   const { recognize, progress, status, terminate, isReady } = useTesseractOcr();
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [rawText, setRawText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>(MOCK_CATEGORIES[2]?.id || '3'); // Default to 'Alltag'
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -87,7 +89,15 @@ export default function AddFromPhotoPage() {
   };
   
   const processImage = useCallback(async (imageSource: File | HTMLCanvasElement) => {
-    setIsLoading(true);
+    if (!isReady) {
+        toast({
+            variant: "default",
+            title: "OCR ist noch nicht bereit",
+            description: "Bitte warte einen Moment, bis die Texterkennung initialisiert ist.",
+        });
+        return;
+    }
+    setIsProcessing(true);
     setPairs([]);
     setRawText('');
     
@@ -99,7 +109,10 @@ export default function AddFromPhotoPage() {
         imageToProcess = imageSource;
       }
       
-      const { text, confidence } = await recognize(imageToProcess);
+      const result = await recognize(imageToProcess);
+      if (!result) throw new Error("Texterkennung fehlgeschlagen");
+
+      const { text, confidence } = result;
       console.log('OCR confidence', confidence);
       setRawText(text);
       const parsed = parsePairs(text);
@@ -116,22 +129,22 @@ export default function AddFromPhotoPage() {
       toast({
         variant: "destructive",
         title: "Fehler bei der Texterkennung",
-        description: "Das Bild konnte nicht verarbeitet werden.",
+        description: "Das Bild konnte nicht verarbeitet werden. Bitte versuche es erneut.",
       });
     } finally {
-      setIsLoading(false);
+      setIsProcessing(false);
     }
-  }, [recognize, toast]);
+  }, [recognize, toast, isReady]);
 
 
   const handleReset = () => {
     setPairs([]);
     setRawText('');
-    setIsLoading(false);
+    setIsProcessing(false);
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
     }
-    terminate(); // Terminate worker to free up memory
+    // Don't terminate, let it be ready for the next one
   };
   
   const handleSave = () => {
@@ -150,7 +163,7 @@ export default function AddFromPhotoPage() {
     }
 
     try {
-        savePairsLocal(selectedPairs);
+        savePairsLocal(selectedPairs, selectedCategory);
         toast({
             title: "Karten gespeichert!",
             description: `${selectedPairs.length} neue Karten wurden hinzugefügt.`,
@@ -169,12 +182,14 @@ export default function AddFromPhotoPage() {
 
 
   const renderContent = () => {
-    if (isLoading || (!isReady && status)) {
+    const isLoading = isProcessing || !isReady;
+
+    if (isLoading && !rawText) {
       return (
         <div className="flex flex-col items-center justify-center text-center space-y-3">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="text-muted-foreground font-medium capitalize">{status || "Initialisiere..."}</p>
-          {isLoading && <Progress value={progress} className="w-full max-w-sm" />}
+          {isProcessing && <Progress value={progress} className="w-full max-w-sm" />}
         </div>
       );
     }
@@ -184,7 +199,20 @@ export default function AddFromPhotoPage() {
         <div className="space-y-6">
             {pairs.length > 0 && (
                  <div className="space-y-3">
-                    <h3 className="font-semibold">Erkannte Wortpaare ({pairs.length})</h3>
+                    <div className="flex justify-between items-center">
+                        <h3 className="font-semibold">Erkannte Wortpaare ({pairs.length})</h3>
+                         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="Kategorie wählen" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {MOCK_CATEGORIES.map(cat => (
+                                    <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+
                     <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                         {pairs.map((p, i) => (
                         <div key={i} className="p-3 border rounded-lg flex items-center gap-3 bg-muted/20">
@@ -199,7 +227,7 @@ export default function AddFromPhotoPage() {
                             }}
                             />
                             <input
-                            className="flex-1 px-2 py-1 border rounded-md"
+                            className="flex-1 px-2 py-1 border rounded-md bg-white"
                             value={p.front}
                             onChange={(e) => {
                                 const next = [...pairs];
@@ -210,7 +238,7 @@ export default function AddFromPhotoPage() {
                             />
                             <span>→</span>
                             <input
-                            className="flex-1 px-2 py-1 border rounded-md"
+                            className="flex-1 px-2 py-1 border rounded-md bg-white"
                             value={p.back}
                             onChange={(e) => {
                                 const next = [...pairs];
@@ -227,7 +255,7 @@ export default function AddFromPhotoPage() {
             <details className="border rounded-lg p-3">
               <summary className="cursor-pointer font-medium text-sm text-muted-foreground">Erkannten Rohtext anzeigen/bearbeiten</summary>
               <textarea 
-                className="mt-2 w-full h-32 p-2 border rounded font-mono text-xs"
+                className="mt-2 w-full h-32 p-2 border rounded font-mono text-xs bg-white"
                 value={rawText}
                 onChange={(e) => {
                     setRawText(e.target.value);
@@ -248,7 +276,6 @@ export default function AddFromPhotoPage() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
-                    capture="environment"
                     className="hidden"
                     onChange={handleFileChange}
                 />
@@ -291,11 +318,15 @@ export default function AddFromPhotoPage() {
           {renderContent()}
         </CardContent>
         <CardFooter className="flex justify-end gap-4 border-t pt-6">
-            {rawText && (
+            {rawText ? (
                 <>
                     <Button variant="ghost" onClick={handleReset}><RefreshCw className="mr-2"/> Abbrechen / Neu</Button>
-                    <Button onClick={handleSave} disabled={isLoading || pairs.filter(p=>p.selected).length === 0}><Save className="mr-2"/> Ausgewählte speichern</Button>
+                    <Button onClick={handleSave} disabled={isProcessing || pairs.filter(p=>p.selected).length === 0}><Save className="mr-2"/> Ausgewählte speichern</Button>
                 </>
+            ) : (
+                 <div className="text-sm text-muted-foreground">
+                    {!isReady ? `Status: ${status}...` : "Bereit zum Scannen."}
+                 </div>
             )}
         </CardFooter>
       </Card>
