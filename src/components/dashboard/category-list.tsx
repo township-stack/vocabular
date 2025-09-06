@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Card,
   CardContent,
@@ -8,13 +10,23 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
-import { MOCK_CATEGORIES, MOCK_CARDS } from "@/lib/mock-data";
+import { MOCK_CATEGORIES } from "@/lib/mock-data";
+import { useEffect, useState } from "react";
+import { loadCards } from "@/lib/local-storage";
 
 export default function CategoryList() {
-  const categoryCardCounts = MOCK_CARDS.reduce((acc, card) => {
-    acc[card.categoryId] = (acc[card.categoryId] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const [categoryCardCounts, setCategoryCardCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const cards = loadCards();
+    const counts = cards.reduce((acc, card) => {
+      if (card.categoryId) {
+        acc[card.categoryId] = (acc[card.categoryId] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+    setCategoryCardCounts(counts);
+  }, []);
 
 
   return (
