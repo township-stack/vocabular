@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "copy-tesseract-assets": "cpx \"node_modules/tesseract.js/dist/worker.min.js\" public/tesseract && cpx \"node_modules/tesseract.js/dist/tesseract-core.wasm\" public/tesseract && cpx \"node_modules/tesseract.js/dist/tesseract-core.wasm.js\" public/tesseract",
+    "copy-tesseract-assets": "cpx \"node_modules/tesseract.js/dist/worker.min.js\" public/tesseract && cpx \"node_modules/tesseract.js-core/tesseract-core.wasm.js\" public/tesseract",
     "postinstall": "npm run copy-tesseract-assets"
   },
   "dependencies": {
@@ -56,7 +56,7 @@
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss-animate": "^1.0.7",
-    "tesseract.js": "^5.1.0",
+    "tesseract.js": "2.1.5",
     "uuid": "^10.0.0",
     "zod": "^3.24.2"
   },

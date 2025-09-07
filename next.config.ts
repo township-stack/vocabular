@@ -9,7 +9,7 @@ const pwaConfig = withPWA({
   fallbacks: { image: '/icon-192.png' },
   runtimeCaching: [
     {
-      urlPattern: /\/tessdata\/.*\.traineddata$/i,
+      urlPattern: /\/tessdata\/.*\.traineddata\.gz$/i,
       handler: 'CacheFirst',
       options: { cacheName: 'tessdata', expiration: { maxEntries: 20 } }
     },

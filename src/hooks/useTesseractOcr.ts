@@ -1,32 +1,34 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Worker } from 'tesseract.js';
+import Tesseract from 'tesseract.js';
 
 // --- Tesseract Worker Singleton ---
+let worker: Tesseract.Worker | null = null;
+let workerPromise: Promise<Tesseract.Worker> | null = null;
 
-let worker: Worker | null = null;
-let workerPromise: Promise<Worker> | null = null;
-
-const getWorker = (): Promise<Worker> => {
+const getWorker = (): Promise<Tesseract.Worker> => {
     if (workerPromise) {
         return workerPromise;
     }
 
     workerPromise = new Promise(async (resolve, reject) => {
         try {
-            console.log("Tesseract Worker wird erstellt...");
-            const { createWorker } = await import('tesseract.js');
-            const createdWorker = await createWorker({
+            console.log("Tesseract Worker wird erstellt (v2 API)...");
+            // API for v2.1.5
+            const createdWorker = Tesseract.createWorker({
                  workerPath: '/tesseract/worker.min.js',
-                 corePath: '/tesseract/tesseract-core.wasm.js',
                  langPath: '/tessdata',
+                 corePath: '/tesseract/tesseract-core.wasm.js',
+                 logger: (m) => {
+                    // We will use the logger in the recognize call instead
+                 }
             });
 
-            const langs = 'pol+deu';
-            console.log(`Sprachmodelle werden geladen (${langs})...`);
-            await createdWorker.loadLanguage(langs);
-            await createdWorker.initialize(langs);
+            console.log(`Sprachmodelle werden geladen (pol+deu)...`);
+            await createdWorker.load();
+            await createdWorker.loadLanguage('pol+deu');
+            await createdWorker.initialize('pol+deu');
             
             worker = createdWorker;
             console.log('Tesseract Worker wurde erfolgreich initialisiert.');
@@ -48,14 +50,12 @@ if (typeof window !== 'undefined') {
 
 
 // --- React Hook ---
-
 export function useTesseractOcr() {
   const [isReady, setIsReady] = useState<boolean>(false);
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [status, setStatus] = useState<string>('Initialisiere...');
   const [progress, setProgress] = useState<number>(0);
   
-  // Ref to track component mount status
   const isMounted = useRef(true);
 
   useEffect(() => {
@@ -85,7 +85,9 @@ export function useTesseractOcr() {
   }, []);
 
   const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<string | null> => {
-    if (!isReady || !worker) {
+    const localWorker = await getWorker();
+
+    if (!isReady || !localWorker) {
       console.error("Recognize aufgerufen, bevor der Worker bereit war.");
       setStatus('Worker nicht bereit');
       return null;
@@ -95,18 +97,17 @@ export function useTesseractOcr() {
       setStatus('Text wird erkannt...');
       setProgress(0);
       
-      const { data } = await worker.recognize(imageSource, {}, { 
-          logger: (m) => {
-             if (m.status === 'recognizing text' && isMounted.current) {
-                setProgress(Math.round(m.progress * 100));
-              }
-          }
+      const { data } = await localWorker.recognize(imageSource, {}, { 
+          // logger is not a valid parameter in the recognize options for v2
       });
-      
-       if (isMounted.current) {
-         setStatus('Bereit');
-         setProgress(100);
-       }
+
+      // Since the logger option is not in recognize, we cannot track live progress easily.
+      // We'll just set it to 100 at the end.
+      if (isMounted.current) {
+          setProgress(100);
+          setStatus('Bereit');
+      }
+
       return data.text;
     } catch (error) {
       console.error('Fehler bei der Tesseract-Texterkennung:', error);
