@@ -10,6 +10,7 @@ export interface Card {
   dueDay?: string;        // YYYY-MM-DD for stable "today" comparison
   createdAt?: string; 
   categoryId?: string;
+  suspended?: boolean; // Card is not asked in reviews if true
 }
 
 export interface Category {
@@ -52,5 +53,3 @@ export interface StudySession {
   categoryFilter?: string;
   notes?: string;
 }
-
-    

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle, Archive } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -59,6 +59,7 @@ function getDueCards(categoryId?: string): CardType[] {
   const today = toYMD();
   return loadCards()
         .filter(c =>
+            !c.suspended && // Filter out suspended cards
             (!categoryId || c.categoryId === categoryId) &&
             (c.dueDay! <= today)
         )
@@ -102,6 +103,13 @@ function reviewCard(card: CardType, quality: number): CardType {
   return updated;
 }
 
+function suspendCard(card: CardType) {
+  const updated: CardType = { ...card, suspended: true };
+  const allCards = loadCards();
+  const updatedCards = allCards.map(c => (c.id === card.id ? updated : c));
+  saveCards(updatedCards);
+}
+
 
 // --- Component ---
 export default function StudyPage() {
@@ -120,17 +128,25 @@ export default function StudyPage() {
     refreshQueue(category);
   }, [category, refreshQueue]);
 
-  const grade = useCallback((quality: number) => {
-    if (!currentCard) return;
-
-    reviewCard(currentCard, quality);
-
+  const advanceQueue = useCallback(() => {
     // Instead of re-filtering the whole deck, just remove the reviewed card
     const nextQueue = queue.slice(1);
     setQueue(nextQueue);
     setCurrentCard(nextQueue[0] || null);
     setShowBack(false);
-  }, [currentCard, queue]);
+  }, [queue]);
+
+  const grade = useCallback((quality: number) => {
+    if (!currentCard) return;
+    reviewCard(currentCard, quality);
+    advanceQueue();
+  }, [currentCard, advanceQueue]);
+
+  const handleSuspend = useCallback(() => {
+      if (!currentCard) return;
+      suspendCard(currentCard);
+      advanceQueue();
+  }, [currentCard, advanceQueue]);
 
 
   const renderCard = () => {
@@ -177,9 +193,14 @@ export default function StudyPage() {
             </CardContent>
             <CardFooter className="flex-col gap-4 pt-6">
                 {!showBack ? (
-                    <Button onClick={() => setShowBack(true)} className="w-full" size="lg">
-                    Antwort anzeigen
-                    </Button>
+                    <div className="w-full flex flex-col sm:flex-row gap-2">
+                        <Button onClick={() => setShowBack(true)} className="w-full" size="lg">
+                            Antwort anzeigen
+                        </Button>
+                        <Button onClick={handleSuspend} variant="outline" size="lg" className="sm:w-auto" title="Diese Karte nicht mehr abfragen">
+                            <Archive className="h-5 w-5" />
+                        </Button>
+                    </div>
                 ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 w-full">
                     {[0, 1, 2, 3, 4, 5].map(q => (
@@ -218,5 +239,3 @@ export default function StudyPage() {
     </div>
   );
 }
-
-    
