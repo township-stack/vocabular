@@ -2,9 +2,11 @@ import type {NextConfig} from 'next';
 // @ts-ignore - pwa type is not available
 import withPWA from 'next-pwa';
 
-const pwaConfig = withPWA({
+const isProduction = process.env.NODE_ENV === 'production';
+
+const pwaConfig = {
   dest: 'public',
-  disable: process.env.NODE_ENV === 'development',
+  disable: !isProduction,
   cacheOnFrontEndNav: true,
   fallbacks: { image: '/icon-192.png' },
   runtimeCaching: [
@@ -24,8 +26,7 @@ const pwaConfig = withPWA({
       options: { cacheName: 'google-fonts' }
     }
   ]
-});
-
+};
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -53,4 +54,7 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default pwaConfig(nextConfig);
+// Wrap the config with PWA only in production
+const exportConfig = isProduction ? withPWA(pwaConfig)(nextConfig) : nextConfig;
+
+export default exportConfig;
