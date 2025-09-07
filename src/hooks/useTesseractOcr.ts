@@ -1,127 +1,162 @@
-// hooks/useTesseractOcr.ts
+
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from 'react';
-import { createWorker, Worker } from 'tesseract.js';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type { Worker } from 'tesseract.js';
+import { createWorker } from 'tesseract.js';
 
-// Singleton-Pattern, um sicherzustellen, dass der Worker nur einmal initialisiert wird.
-let workerSingleton: Worker | null = null;
-let workerInitializationPromise: Promise<Worker> | null = null;
+// --- Global Tesseract Worker Manager ---
 
-const initializeWorker = async (
-  onProgress: (p: number) => void,
-  onStatus: (s: string) => void
-): Promise<Worker> => {
-  if (workerSingleton) {
-    onStatus("Bereit");
-    return workerSingleton;
+type ProgressCallback = (progress: number) => void;
+type StatusCallback = (status: string) => void;
+
+class TesseractManager {
+  private worker: Worker | null = null;
+  private isReady = false;
+  private isInitializing = false;
+  private progressCallback: ProgressCallback | null = null;
+  private statusCallback: StatusCallback | null = null;
+
+  constructor() {
+    this.initialize();
   }
-  if (workerInitializationPromise) {
-    return workerInitializationPromise;
+  
+  private setStatus(status: string) {
+    if (this.statusCallback) this.statusCallback(status);
   }
 
-  workerInitializationPromise = (async () => {
+  private setProgress(progress: number) {
+    if (this.progressCallback) this.progressCallback(progress);
+  }
+  
+  private async initialize() {
+    if (this.isReady || this.isInitializing) {
+      return;
+    }
+    this.isInitializing = true;
+    this.setStatus('Worker wird erstellt...');
+    
     try {
-      const workerPath = '/tesseract/worker.min.js';
-      const corePath = '/tesseract/tesseract-core.wasm.js';
-      const langPath = '/tessdata';
-      const langs = 'pol+deu';
-      
-      console.log('Tesseract Worker wird initialisiert mit:', {
-          typeof_workerPath: typeof workerPath,
-          typeof_corePath: typeof corePath,
-          typeof_langPath: typeof langPath,
-          langs,
-          typeof_langs: typeof langs,
-        });
-
-
-      onStatus('Worker wird erstellt...');
       const worker = await createWorker({
-        workerPath,
-        corePath,
-        langPath,
+        workerPath: '/tesseract/worker.min.js',
+        corePath: '/tesseract/tesseract-core.wasm.js',
+        langPath: '/tessdata',
       });
-
-      onStatus('Sprachmodelle werden geladen (pol+deu)...');
+      
+      const langs = 'pol+deu';
+      this.setStatus('Sprachmodelle werden geladen (pol+deu)...');
       await worker.loadLanguage(langs);
       await worker.initialize(langs);
+      
+      this.worker = worker;
+      this.isReady = true;
+      this.isInitializing = false;
+      this.setStatus('Bereit');
+      console.log('Tesseract Worker wurde erfolgreich initialisiert.');
 
-      workerSingleton = worker;
-      onStatus('Bereit');
-      return worker;
     } catch (error) {
       console.error("Tesseract Worker-Initialisierung fehlgeschlagen:", error);
-      onStatus("Fehler bei Initialisierung");
-      workerInitializationPromise = null; // Reset für den nächsten Versuch
-      throw error;
+      this.setStatus("Fehler bei Initialisierung");
+      this.isInitializing = false;
     }
-  })();
+  }
 
-  return workerInitializationPromise;
-};
+  public subscribe(statusCb: StatusCallback, progressCb: ProgressCallback) {
+    this.statusCallback = statusCb;
+    this.progressCallback = progressCb;
+    // Provide initial status
+    if (this.isReady) {
+        statusCb('Bereit');
+    } else if (this.isInitializing) {
+        statusCb('Worker wird initialisiert...');
+    } else {
+        statusCb('Nicht initialisiert');
+    }
+  }
+  
+  public unsubscribe() {
+    this.statusCallback = null;
+    this.progressCallback = null;
+  }
+
+  public async recognize(image: File | HTMLCanvasElement): Promise<string | null> {
+    if (!this.isReady || !this.worker) {
+      this.setStatus('Fehler: Worker nicht bereit');
+      console.error('Recognize aufgerufen, aber Worker ist nicht bereit.');
+      // Try to re-initialize if it failed before
+      if (!this.isInitializing) {
+          this.initialize();
+      }
+      return null;
+    }
+    
+    const subscription = this.worker.subscribe(m => {
+       if (m.status === 'recognizing text') {
+          this.setStatus(`Text wird erkannt...`);
+          this.setProgress(Math.round(m.progress * 100));
+        }
+    });
+
+    try {
+      const { data } = await this.worker.recognize(image);
+      return data.text;
+    } catch (error) {
+      console.error('Fehler bei der Tesseract-Texterkennung:', error);
+      this.setStatus('Fehler bei Texterkennung');
+      return null;
+    } finally {
+       subscription.unsubscribe();
+       this.setStatus('Bereit');
+       this.setProgress(0);
+    }
+  }
+  
+  public getIsReady(): boolean {
+      return this.isReady;
+  }
+}
+
+// Create a single, global instance of the manager
+const tesseractManager = new TesseractManager();
+
+
+// --- React Hook ---
 
 export function useTesseractOcr() {
   const [progress, setProgress] = useState<number>(0);
   const [status, setStatus] = useState<string>('Nicht initialisiert');
-  const [isReady, setIsReady] = useState(false);
+  const [isReady, setIsReady] = useState<boolean>(false);
 
-  // Stellt sicher, dass die Worker-Initialisierung nur einmal angestoßen wird.
   useEffect(() => {
-    let isMounted = true;
-
-    const onStatusUpdate = (newStatus: string) => {
-      if (isMounted) setStatus(newStatus);
+    const handleStatusUpdate = (newStatus: string) => {
+      setStatus(newStatus);
+      if (newStatus === 'Bereit') {
+        setIsReady(true);
+      } else {
+        setIsReady(false);
+      }
     };
-    const onProgressUpdate = (newProgress: number) => {
-        if (isMounted) setProgress(newProgress);
-    }
+    
+    const handleProgressUpdate = (newProgress: number) => {
+      setProgress(newProgress);
+    };
 
-    initializeWorker(onProgressUpdate, onStatusUpdate)
-      .then(() => {
-        if (isMounted) setIsReady(true);
-      })
-      .catch(() => {
-        if (isMounted) setIsReady(false);
-      });
+    tesseractManager.subscribe(handleStatusUpdate, handleProgressUpdate);
+
+    // Initial check
+    setIsReady(tesseractManager.getIsReady());
 
     return () => {
-      isMounted = false;
-      // Der Worker wird absichtlich nicht terminiert, damit er für die gesamte Sitzung verfügbar bleibt.
+      tesseractManager.unsubscribe();
     };
   }, []);
-
+  
   const recognize = useCallback(
     async (imageSource: File | HTMLCanvasElement): Promise<string | null> => {
-      if (!workerSingleton || !isReady) {
-        console.error('Recognize aufgerufen, aber Worker ist nicht bereit.');
-        setStatus('Fehler: Worker nicht bereit');
-        return null;
-      }
-
-      const worker = workerSingleton;
-      const subscription = worker.subscribe((m) => {
-        if (m.status === 'recognizing text') {
-          setStatus(`Text wird erkannt...`);
-          setProgress(Math.round(m.progress * 100));
-        }
-      });
-
-      try {
-        const { data } = await worker.recognize(imageSource);
-        return data.text;
-      } catch (error) {
-        console.error('Fehler bei der Tesseract-Texterkennung:', error);
-        setStatus('Fehler bei Texterkennung');
-        return null;
-      } finally {
-        subscription.unsubscribe();
-        setStatus('Bereit');
-        setProgress(0);
-      }
+        return tesseractManager.recognize(imageSource);
     },
-    [isReady]
+    []
   );
 
-  return { recognize, progress, status, isReady };
+  return { recognize, progress, status, isReady, isInitializing: !isReady && status !== 'Nicht initialisiert' && status !== 'Fehler bei Initialisierung' };
 }
