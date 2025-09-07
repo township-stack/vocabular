@@ -3,7 +3,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Camera, Check, AlertTriangle } from "lucide-react";
+import { Loader2, Camera, Check, AlertTriangle, Text } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useTesseractOcr } from "@/hooks/useTesseractOcr";
@@ -29,7 +31,6 @@ function parsePairs(raw: string): Pair[] {
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const out: Pair[] = [];
   for (const line of lines) {
-    // Regex, um polnische und deutsche Wörter zu trennen, die durch gängige Trennzeichen getrennt sind
     const m = line.match(/^(.*?)\s*(?:[-–—:;→]|=>)\s*(.+)$/);
     if (m && m[1]?.trim() && m[2]?.trim()) {
       out.push({ front: m[1].trim(), back: m[2].trim() });
@@ -38,13 +39,11 @@ function parsePairs(raw: string): Pair[] {
   return out;
 }
 
-// Skaliert ein Bild per Canvas herunter, falls es zu groß ist (Bonus-Feature aus dem Megaprompt)
 async function downscaleImage(file: File, maxDim = 2500): Promise<HTMLCanvasElement> {
   const img = await fileToImage(file);
   const { width, height } = fitContain(img.width, img.height, maxDim);
   
   if (width === img.width && height === img.height) {
-     // Kein Downscaling nötig, Original-Bild in Canvas zeichnen
      const canvas = document.createElement('canvas');
      canvas.width = img.width;
      canvas.height = img.height;
@@ -72,7 +71,7 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      URL.revokeObjectURL(url); // Wichtig: Speicher freigeben
+      URL.revokeObjectURL(url);
       res(img);
     };
     img.onerror = rej;
@@ -82,13 +81,14 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
 
 // --- Component ---
 
-export default function AddFromPhotoPage() {
+export default function AddVocabularyPage() {
   const { toast } = useToast();
   const router = useRouter();
   const { recognize, progress, status, isReady } = useTesseractOcr();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<{ count: number; categoryName: string } | null>(null);
+  const [pastedText, setPastedText] = useState("");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -125,7 +125,24 @@ export default function AddFromPhotoPage() {
       if (recognizedText === null) throw new Error("Texterkennung fehlgeschlagen. Recognize gab null zurück.");
 
       const pairs = parsePairs(recognizedText);
+      handleSavePairs(pairs);
 
+    } catch (error) {
+      console.error("Error during OCR process:", error);
+      toast({
+        variant: "destructive",
+        title: "Fehler bei der Texterkennung",
+        description: "Das Bild konnte nicht verarbeitet werden. Bitte versuche es erneut.",
+      });
+    } finally {
+      setIsProcessing(false);
+       if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [recognize, toast, isReady, selectedCategory]);
+
+  const handleSavePairs = (pairs: Pair[]) => {
       if (pairs.length > 0) {
         savePairsLocal(pairs, selectedCategory);
         const categoryName = MOCK_CATEGORIES.find(c => c.id === selectedCategory)?.name || "Allgemein";
@@ -139,24 +156,16 @@ export default function AddFromPhotoPage() {
          toast({
             variant: "default",
             title: "Keine Paare erkannt",
-            description: "Es konnten keine Wortpaare automatisch erkannt werden. Bitte versuche es mit einem anderen Foto.",
+            description: "Es konnten keine gültigen Wortpaare im Format 'Wort - Übersetzung' gefunden werden.",
         });
       }
+  };
 
-    } catch (error) {
-      console.error("Error during OCR process:", error);
-      toast({
-        variant: "destructive",
-        title: "Fehler bei der Texterkennung",
-        description: "Das Bild konnte nicht verarbeitet werden. Bitte versuche es erneut.",
-      });
-    } finally {
-      setIsProcessing(false);
-       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-    }
-    }
-  }, [recognize, toast, isReady, selectedCategory]);
+  const handlePasteProcess = () => {
+      const pairs = parsePairs(pastedText);
+      handleSavePairs(pairs);
+      setPastedText(""); // Clear textarea after processing
+  };
 
   const renderContent = () => {
     const isLoading = isProcessing || !isReady;
@@ -164,7 +173,7 @@ export default function AddFromPhotoPage() {
 
     if (isLoading) {
       return (
-        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8">
+        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[300px]">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
           <p className="text-muted-foreground font-medium capitalize">{loadingText}</p>
           {isProcessing && <Progress value={progress} className="w-full max-w-sm" />}
@@ -174,7 +183,7 @@ export default function AddFromPhotoPage() {
     
      if (lastResult) {
       return (
-        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8">
+        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[300px]">
             {lastResult.count > 0 ? (
                 <>
                     <Check className="h-12 w-12 text-green-500"/>
@@ -184,7 +193,7 @@ export default function AddFromPhotoPage() {
                     </p>
                     <div className="flex gap-2">
                         <Button onClick={() => setLastResult(null)} variant="outline">
-                            Weitere scannen
+                            Weitere hinzufügen
                         </Button>
                         <Button onClick={() => router.push('/study')} size="lg">
                             Jetzt lernen
@@ -195,8 +204,8 @@ export default function AddFromPhotoPage() {
                  <>
                     <AlertTriangle className="h-12 w-12 text-amber-500"/>
                     <h3 className="text-2xl font-bold">Nichts gefunden</h3>
-                    <p className="text-muted-foreground">
-                        Keine Vokabelpaare erkannt. Versuche es mit besserer Beleuchtung oder einem klareren Bild.
+                    <p className="text-muted-foreground max-w-sm">
+                        Keine Vokabelpaare erkannt. Bitte prüfe das Format (z.B. `Wort - Übersetzung`) und versuche es erneut.
                     </p>
                      <Button onClick={() => setLastResult(null)} size="lg" variant="outline">
                         Erneut versuchen
@@ -208,34 +217,44 @@ export default function AddFromPhotoPage() {
     }
 
     return (
-        <div className="text-center py-8 px-4 flex flex-col items-center gap-6">
-             <h3 className="text-xl font-bold text-foreground">Vokabeln scannen & lernen</h3>
-             <p className="text-base text-muted-foreground max-w-md">
-                Fotografiere eine Vokabelliste. Die App erkennt die Wortpaare und fügt sie automatisch deinem Trainer hinzu.
-             </p>
-            <div className="w-full max-w-sm space-y-4">
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                    <SelectTrigger className="w-full h-12 text-base">
-                        <SelectValue placeholder="Kategorie wählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {MOCK_CATEGORIES.map(cat => (
-                            <SelectItem key={cat.id} value={cat.id} className="text-base">{cat.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+      <div className="p-4 sm:p-6">
+        <div className="w-full max-w-sm mx-auto space-y-4 mb-6">
+            <h3 className="text-xl font-bold text-center text-foreground">Vokabeln hinzufügen</h3>
+            <p className="text-base text-muted-foreground text-center">
+               Wähle eine Kategorie und füge Karten per Foto-Scan oder durch Einfügen von Text hinzu.
+            </p>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-full h-12 text-base">
+                    <SelectValue placeholder="Kategorie wählen" />
+                </SelectTrigger>
+                <SelectContent>
+                    {MOCK_CATEGORIES.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id} className="text-base">{cat.name}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
 
-                 <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleFileChange}
-                />
-
+        <Tabs defaultValue="photo" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="photo"><Camera className="mr-2 h-4 w-4" />Foto-Scan</TabsTrigger>
+            <TabsTrigger value="text"><Text className="mr-2 h-4 w-4" />Text einfügen</TabsTrigger>
+          </TabsList>
+          <TabsContent value="photo" className="pt-6 text-center">
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileChange}
+            />
+            <div className="flex flex-col items-center gap-4">
+                <p className="text-sm text-muted-foreground max-w-md">
+                    Fotografiere eine Vokabelliste oder wähle ein Bild aus deiner Galerie aus.
+                 </p>
                 <Button
                     size="lg"
-                    className="w-full h-14 text-lg"
+                    className="w-full max-w-xs h-14 text-lg"
                     onClick={() => setCameraOpen(true)}
                     disabled={isLoading}
                 >
@@ -244,14 +263,40 @@ export default function AddFromPhotoPage() {
                 </Button>
                  <Button
                     variant="secondary"
-                    className="w-full"
+                    className="w-full max-w-xs"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isLoading}
                 >
                     Datei auswählen
                 </Button>
             </div>
-        </div>
+          </TabsContent>
+          <TabsContent value="text" className="pt-6">
+            <div className="flex flex-col items-center gap-4">
+                 <p className="text-sm text-muted-foreground max-w-md text-center">
+                    Füge hier deine Vokabelliste ein. Jede Zeile sollte ein Paar enthalten, z.B. `Wort - Übersetzung`.
+                 </p>
+                <Textarea
+                    placeholder="Beispiel:
+dziękuję - danke
+proszę - bitte
+przepraszam - Entschuldigung"
+                    className="min-h-[150px] text-base"
+                    value={pastedText}
+                    onChange={(e) => setPastedText(e.target.value)}
+                />
+                <Button
+                    size="lg"
+                    className="w-full max-w-xs"
+                    onClick={handlePasteProcess}
+                    disabled={!pastedText.trim()}
+                >
+                    Karten erstellen
+                </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
     );
   };
 
@@ -263,7 +308,7 @@ export default function AddFromPhotoPage() {
             </CardContent>
              <CardFooter className="flex-col items-center justify-center gap-2 border-t pt-4 text-center">
                  <p className="text-xs text-muted-foreground">
-                    Status: {isReady ? "Bereit zum Scannen." : status}
+                    OCR-Status: {isReady ? "Bereit zum Scannen." : status}
                  </p>
                  <p className="text-xs text-muted-foreground">
                     Tipp: Für beste Ergebnisse flach fotografieren und auf gute Beleuchtung achten.
