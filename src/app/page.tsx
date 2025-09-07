@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Camera, Check, AlertTriangle, Text, Share2 } from "lucide-react";
+import mammoth from "mammoth";
 import {
   Card,
   CardContent,
@@ -97,6 +98,25 @@ function readFileAsText(file: File): Promise<string> {
     });
 }
 
+function readDocxFile(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const arrayBuffer = event.target?.result as ArrayBuffer;
+                const result = await mammoth.extractRawText({ arrayBuffer });
+                resolve(result.value);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = (error) => {
+            reject(error);
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
 
 // --- Component ---
 
@@ -129,11 +149,13 @@ export default function AddVocabularyPage() {
         await processImage(file);
     } else if (file.type === 'text/plain') {
         await processTextFile(file);
+    } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        await processDocxFile(file);
     } else {
         toast({
             variant: "destructive",
             title: "Nicht unterstützter Dateityp",
-            description: "Bitte wähle eine Bild- oder .txt-Datei aus.",
+            description: "Bitte wähle eine Bild-, .txt-, oder .docx-Datei aus.",
         });
     }
   };
@@ -190,6 +212,25 @@ export default function AddVocabularyPage() {
             variant: "destructive",
             title: "Fehler beim Lesen der Datei",
             description: "Die Textdatei konnte nicht verarbeitet werden.",
+        });
+    } finally {
+        setIsProcessing(false);
+    }
+  };
+
+  const processDocxFile = async (file: File) => {
+    setIsProcessing(true);
+    setLastResult(null);
+    try {
+        const text = await readDocxFile(file);
+        const pairs = parsePairs(text);
+        handleSavePairs(pairs);
+    } catch (error) {
+        console.error("Error processing .docx file:", error);
+        toast({
+            variant: "destructive",
+            title: "Fehler beim Lesen der .docx Datei",
+            description: "Die Word-Datei konnte nicht verarbeitet werden.",
         });
     } finally {
         setIsProcessing(false);
@@ -299,7 +340,7 @@ export default function AddVocabularyPage() {
 
             <div className="flex flex-col items-center gap-4">
                 <p className="text-sm text-muted-foreground max-w-md">
-                    Fotografiere eine Vokabelliste oder lade ein Bild oder eine Textdatei hoch.
+                    Fotografiere eine Vokabelliste oder lade ein Bild, eine .txt- oder .docx-Datei hoch.
                  </p>
                 <Button
                     size="lg"
@@ -315,11 +356,11 @@ export default function AddVocabularyPage() {
                     className="w-full max-w-xs relative"
                     disabled={isLoading}
                 >
-                    Datei auswählen (Bild/txt)
+                    Datei auswählen (Bild/txt/docx)
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,text/plain"
+                      accept="image/*,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       onChange={handleFileChange}
                     />
