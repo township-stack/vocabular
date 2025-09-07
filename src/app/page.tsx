@@ -1,9 +1,8 @@
-
 "use client";
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Camera, Check, AlertTriangle, Text } from "lucide-react";
+import { Loader2, Camera, Check, AlertTriangle, Text, Share2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -22,6 +21,12 @@ import CameraModal from "@/components/camera-modal";
 import { savePairsLocal } from "@/lib/local-storage";
 import { MOCK_CATEGORIES } from "@/lib/mock-data";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert"
+
 
 // --- Helpers ---
 
@@ -84,7 +89,7 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
 export default function AddVocabularyPage() {
   const { toast } = useToast();
   const router = useRouter();
-  const { recognize, progress, status, isReady } = useTesseractOcr();
+  const { recognize, progress, status, isReady, isInitializing } = useTesseractOcr();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastResult, setLastResult] = useState<{ count: number; categoryName: string } | null>(null);
@@ -168,22 +173,22 @@ export default function AddVocabularyPage() {
   };
 
   const renderContent = () => {
-    const isLoading = isProcessing || !isReady;
-    const loadingText = isProcessing ? status : (isReady ? 'Bereit' : status);
+    const isLoading = isProcessing || isInitializing;
+    const loadingText = isProcessing ? status : (isInitializing ? 'Initialisiere Texterkennung...' : 'Bereit');
 
     if (isLoading) {
       return (
-        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[300px]">
+        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[400px]">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
           <p className="text-muted-foreground font-medium capitalize">{loadingText}</p>
-          {isProcessing && <Progress value={progress} className="w-full max-w-sm" />}
+          {(isProcessing || (isInitializing && progress > 0)) && <Progress value={progress} className="w-full max-w-sm" />}
         </div>
       );
     }
     
      if (lastResult) {
       return (
-        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[300px]">
+        <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[400px]">
             {lastResult.count > 0 ? (
                 <>
                     <Check className="h-12 w-12 text-green-500"/>
@@ -221,7 +226,7 @@ export default function AddVocabularyPage() {
         <div className="w-full max-w-sm mx-auto space-y-4 mb-6">
             <h3 className="text-xl font-bold text-center text-foreground">Vokabeln hinzufügen</h3>
             <p className="text-base text-muted-foreground text-center">
-               Wähle eine Kategorie und füge Karten per Foto-Scan oder durch Einfügen von Text hinzu.
+               Wähle eine Kategorie und füge Karten per Foto, Text oder "Teilen"-Funktion hinzu.
             </p>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                 <SelectTrigger className="w-full h-12 text-base">
@@ -250,7 +255,7 @@ export default function AddVocabularyPage() {
             />
             <div className="flex flex-col items-center gap-4">
                 <p className="text-sm text-muted-foreground max-w-md">
-                    Fotografiere eine Vokabelliste oder wähle ein Bild aus deiner Galerie aus.
+                    Fotografiere eine Vokabelliste oder wähle ein Bild aus deiner Galerie.
                  </p>
                 <Button
                     size="lg"
@@ -303,12 +308,21 @@ przepraszam - Entschuldigung"
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-10rem)]">
         <Card className="w-full max-w-lg mx-auto">
+            <CardHeader>
+                <Alert>
+                  <Share2 className="h-4 w-4" />
+                  <AlertTitle>Neu: Per "Teilen" importieren!</AlertTitle>
+                  <AlertDescription>
+                    Du kannst jetzt Text aus Apps wie Google Lens oder Keep direkt an LinguaDeck senden. Installiere die App (im Browser-Menü unter "App installieren" oder "Zum Startbildschirm hinzufügen") und wähle sie im "Teilen"-Dialog aus.
+                  </AlertDescription>
+                </Alert>
+            </CardHeader>
             <CardContent className="p-0">
             {renderContent()}
             </CardContent>
              <CardFooter className="flex-col items-center justify-center gap-2 border-t pt-4 text-center">
                  <p className="text-xs text-muted-foreground">
-                    OCR-Status: {isReady ? "Bereit zum Scannen." : status}
+                    OCR-Status: {isReady ? "Bereit" : status}
                  </p>
                  <p className="text-xs text-muted-foreground">
                     Tipp: Für beste Ergebnisse flach fotografieren und auf gute Beleuchtung achten.
