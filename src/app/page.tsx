@@ -84,6 +84,20 @@ function fileToImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
+function readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            resolve(event.target?.result as string);
+        };
+        reader.onerror = (error) => {
+            reject(error);
+        };
+        reader.readAsText(file);
+    });
+}
+
+
 // --- Component ---
 
 export default function AddVocabularyPage() {
@@ -110,7 +124,18 @@ export default function AddVocabularyPage() {
     const file = event.target.files?.[0];
     if (!file) return;
     event.target.value = ''; // Reset input to allow re-selection of the same file
-    await processImage(file);
+
+    if (file.type.startsWith('image/')) {
+        await processImage(file);
+    } else if (file.type === 'text/plain') {
+        await processTextFile(file);
+    } else {
+        toast({
+            variant: "destructive",
+            title: "Nicht unterstützter Dateityp",
+            description: "Bitte wähle eine Bild- oder .txt-Datei aus.",
+        });
+    }
   };
   
   const processImage = useCallback(async (imageSource: File | HTMLCanvasElement) => {
@@ -151,6 +176,26 @@ export default function AddVocabularyPage() {
       setIsProcessing(false);
     }
   }, [recognize, toast, isReady, selectedCategory]);
+
+  const processTextFile = async (file: File) => {
+    setIsProcessing(true);
+    setLastResult(null);
+    try {
+        const text = await readFileAsText(file);
+        const pairs = parsePairs(text);
+        handleSavePairs(pairs);
+    } catch (error) {
+        console.error("Error processing text file:", error);
+        toast({
+            variant: "destructive",
+            title: "Fehler beim Lesen der Datei",
+            description: "Die Textdatei konnte nicht verarbeitet werden.",
+        });
+    } finally {
+        setIsProcessing(false);
+    }
+  };
+
 
   const handleSavePairs = (pairs: Pair[]) => {
       if (pairs.length > 0) {
@@ -254,7 +299,7 @@ export default function AddVocabularyPage() {
 
             <div className="flex flex-col items-center gap-4">
                 <p className="text-sm text-muted-foreground max-w-md">
-                    Fotografiere eine Vokabelliste oder wähle ein Bild aus deiner Galerie.
+                    Fotografiere eine Vokabelliste oder lade ein Bild oder eine Textdatei hoch.
                  </p>
                 <Button
                     size="lg"
@@ -270,11 +315,11 @@ export default function AddVocabularyPage() {
                     className="w-full max-w-xs relative"
                     disabled={isLoading}
                 >
-                    Datei auswählen
+                    Datei auswählen (Bild/txt)
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
+                      accept="image/*,text/plain"
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       onChange={handleFileChange}
                     />
@@ -346,3 +391,5 @@ przepraszam - Entschuldigung"
     </div>
   );
 }
+
+    
