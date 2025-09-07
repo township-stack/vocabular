@@ -18,6 +18,7 @@ import {
   SidebarMenuButton,
   SidebarFooter,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,21 @@ const menuItems = [
   { href: "/manage", label: "Manage", icon: BookCopy },
 ];
 
+function NavLink({ href, children }: { href: string, children: React.ReactNode }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  const handleNavigation = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
+
+  return (
+    <Link href={href} onClick={handleNavigation}>
+      {children}
+    </Link>
+  );
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const pageTitle = menuItems.find((item) => pathname.startsWith(item.href) && item.href !== '/')?.label || menuItems.find(item => item.href === pathname)?.label || "Dashboard";
@@ -55,12 +71,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarMenu>
             {menuItems.map((item) => (
               <SidebarMenuItem key={item.href}>
-                <Link href={item.href}>
+                <NavLink href={item.href}>
                   <SidebarMenuButton isActive={pathname === item.href} tooltip={item.label}>
                     <item.icon />
                     <span>{item.label}</span>
                   </SidebarMenuButton>
-                </Link>
+                </NavLink>
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
@@ -68,12 +84,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <SidebarFooter>
           <SidebarMenu>
             <SidebarMenuItem>
-              <Link href="/settings">
+              <NavLink href="/settings">
                 <SidebarMenuButton tooltip="Settings">
                   <Settings />
                   <span>Settings</span>
                 </SidebarMenuButton>
-              </Link>
+              </NavLink>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarFooter>

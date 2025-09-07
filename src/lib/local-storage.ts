@@ -1,5 +1,6 @@
 import type { Card } from './types';
 import { v4 as uuid } from 'uuid';
+import { MOCK_CARDS } from './mock-data';
 
 
 const toYMD = (d = new Date()) =>
@@ -9,7 +10,13 @@ const toYMD = (d = new Date()) =>
 export function loadCards(): Card[] {
   if (typeof window === "undefined") return [];
   try {
-    const cards = JSON.parse(localStorage.getItem("cards") ?? "[]") as Card[];
+    const storedCards = localStorage.getItem("cards");
+    if (!storedCards) {
+      // If no cards are in local storage, load mock data
+      saveCards(MOCK_CARDS);
+      return MOCK_CARDS;
+    }
+    const cards = JSON.parse(storedCards) as Card[];
      // Ensure dueDay is set for old cards for backwards compatibility
      return cards.map((c: Card) => ({
         ...c,

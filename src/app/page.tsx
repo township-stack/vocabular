@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTesseractOcr } from "@/hooks/useTesseractOcr";
 import { Progress } from "@/components/ui/progress";
 import CameraModal from "@/components/camera-modal";
-import { savePairsLocal } from "@/lib/local-storage";
+import { loadCards, savePairsLocal } from "@/lib/local-storage";
 import { MOCK_CATEGORIES } from "@/lib/mock-data";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -101,6 +101,7 @@ export default function AddVocabularyPage() {
     setIsClient(true);
   }, []);
   
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '1');
@@ -108,6 +109,7 @@ export default function AddVocabularyPage() {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    event.target.value = ''; // Reset input to allow re-selection of the same file
     await processImage(file);
   };
   
@@ -147,9 +149,6 @@ export default function AddVocabularyPage() {
       });
     } finally {
       setIsProcessing(false);
-       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
   }, [recognize, toast, isReady, selectedCategory]);
 
@@ -252,13 +251,7 @@ export default function AddVocabularyPage() {
             <TabsTrigger value="text"><Text className="mr-2 h-4 w-4" />Text einfügen</TabsTrigger>
           </TabsList>
           <TabsContent value="photo" className="pt-6 text-center">
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileChange}
-            />
+
             <div className="flex flex-col items-center gap-4">
                 <p className="text-sm text-muted-foreground max-w-md">
                     Fotografiere eine Vokabelliste oder wähle ein Bild aus deiner Galerie.
@@ -274,11 +267,17 @@ export default function AddVocabularyPage() {
                 </Button>
                  <Button
                     variant="secondary"
-                    className="w-full max-w-xs"
-                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full max-w-xs relative"
                     disabled={isLoading}
                 >
                     Datei auswählen
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      onChange={handleFileChange}
+                    />
                 </Button>
             </div>
           </TabsContent>
