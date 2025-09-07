@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Camera, Check, AlertTriangle, Text, Share2 } from "lucide-react";
 import {
@@ -95,6 +95,12 @@ export default function AddVocabularyPage() {
   const [lastResult, setLastResult] = useState<{ count: number; categoryName: string } | null>(null);
   const [pastedText, setPastedText] = useState("");
   
+  // State to prevent hydration mismatch
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string>(MOCK_CATEGORIES[0]?.id || '1');
@@ -176,7 +182,7 @@ export default function AddVocabularyPage() {
     const isLoading = isProcessing || isInitializing;
     const loadingText = isProcessing ? status : (isInitializing ? 'Initialisiere Texterkennung...' : 'Bereit');
 
-    if (isLoading) {
+    if (!isClient || isLoading) {
       return (
         <div className="flex flex-col items-center justify-center text-center space-y-4 p-8 min-h-[400px]">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />

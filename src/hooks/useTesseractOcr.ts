@@ -1,67 +1,47 @@
 "use client";
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Worker } from 'tesseract.js';
 
 // --- Tesseract Worker Singleton ---
 
 let worker: Worker | null = null;
 let workerPromise: Promise<Worker> | null = null;
-let globalStatus: string = 'Nicht initialisiert';
-let globalProgress: number = 0;
 
-const statusListeners = new Set<(status: string) => void>();
-const progressListeners = new Set<(progress: number) => void>();
-
-function updateStatus(status: string) {
-  globalStatus = status;
-  statusListeners.forEach(listener => listener(status));
-}
-
-function updateProgress(progress: number) {
-  globalProgress = progress;
-  progressListeners.forEach(listener => listener(progress));
-}
-
-async function getWorker(): Promise<Worker> {
-  if (workerPromise) {
-    return workerPromise;
-  }
-
-  workerPromise = (async () => {
-    try {
-      updateStatus('Worker wird erstellt...');
-      const { createWorker } = await import('tesseract.js');
-      
-      // The logger function cannot be passed to the worker, this is the fix.
-      const createdWorker = await createWorker({
-        workerPath: '/tesseract/worker.min.js',
-        corePath: '/tesseract/tesseract-core.wasm.js',
-        langPath: '/tessdata',
-      });
-
-      const langs = 'pol+deu';
-      updateStatus(`Sprachmodelle werden geladen (${langs})...`);
-      await createdWorker.loadLanguage(langs);
-      await createdWorker.initialize(langs);
-      
-      worker = createdWorker;
-      updateStatus('Bereit');
-      console.log('Tesseract Worker wurde erfolgreich initialisiert.');
-      return worker;
-
-    } catch (error) {
-      console.error("Tesseract Worker-Initialisierung fehlgeschlagen:", error);
-      updateStatus("Fehler bei Initialisierung");
-      workerPromise = null; // Reset promise so we can try again
-      throw error;
+const getWorker = (): Promise<Worker> => {
+    if (workerPromise) {
+        return workerPromise;
     }
-  })();
 
-  return workerPromise;
-}
+    workerPromise = new Promise(async (resolve, reject) => {
+        try {
+            console.log("Tesseract Worker wird erstellt...");
+            const { createWorker } = await import('tesseract.js');
+            const createdWorker = await createWorker({
+                 workerPath: '/tesseract/worker.min.js',
+                 corePath: '/tesseract/tesseract-core.wasm.js',
+                 langPath: '/tessdata',
+            });
 
-// Pre-initialize on module load
+            const langs = 'pol+deu';
+            console.log(`Sprachmodelle werden geladen (${langs})...`);
+            await createdWorker.loadLanguage(langs);
+            await createdWorker.initialize(langs);
+            
+            worker = createdWorker;
+            console.log('Tesseract Worker wurde erfolgreich initialisiert.');
+            resolve(worker);
+        } catch (error) {
+            console.error("Tesseract Worker-Initialisierung fehlgeschlagen:", error);
+            workerPromise = null; // Reset promise so we can try again
+            reject(error);
+        }
+    });
+
+    return workerPromise;
+};
+
+// Pre-initialize on module load in the browser
 if (typeof window !== 'undefined') {
     getWorker();
 }
@@ -70,56 +50,73 @@ if (typeof window !== 'undefined') {
 // --- React Hook ---
 
 export function useTesseractOcr() {
-  const [progress, setProgress] = useState<number>(globalProgress);
-  const [status, setStatus] = useState<string>(globalStatus);
-  const isReady = status === 'Bereit';
+  const [isReady, setIsReady] = useState<boolean>(false);
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [status, setStatus] = useState<string>('Initialisiere...');
+  const [progress, setProgress] = useState<number>(0);
+  
+  // Ref to track component mount status
+  const isMounted = useRef(true);
 
   useEffect(() => {
-    const onStatusChange = (newStatus: string) => setStatus(newStatus);
-    const onProgressChange = (newProgress: number) => setProgress(newProgress);
-
-    statusListeners.add(onStatusChange);
-    progressListeners.add(onProgressChange);
-
-    // Sync with current global state on mount
-    onStatusChange(globalStatus);
-    onProgressChange(globalProgress);
-
+    isMounted.current = true;
+    
+    const checkWorkerStatus = async () => {
+        try {
+            await getWorker();
+            if (isMounted.current) {
+                setIsReady(true);
+                setIsInitializing(false);
+                setStatus('Bereit');
+            }
+        } catch (error) {
+            if (isMounted.current) {
+                setIsInitializing(false);
+                setStatus('Fehler bei Initialisierung');
+            }
+        }
+    };
+    
+    checkWorkerStatus();
+    
     return () => {
-      statusListeners.delete(onStatusChange);
-      progressListeners.delete(onProgressChange);
+        isMounted.current = false;
     };
   }, []);
-  
-  const recognize = useCallback(
-    async (imageSource: File | HTMLCanvasElement): Promise<string | null> => {
-      updateProgress(0);
-      updateStatus('Warte auf Worker...');
-      
-      try {
-        const w = await getWorker();
-        updateStatus('Text wird erkannt...');
-        
-        const { data } = await w.recognize(imageSource, {}, { logger: (m) => {
-             if (m.status === 'recognizing text') {
-                updateProgress(Math.round(m.progress * 100));
-              }
-        }});
-        
-        updateStatus('Bereit');
-        updateProgress(0);
-        return data.text;
-      } catch (error) {
-        console.error('Fehler bei der Tesseract-Texterkennung:', error);
-        updateStatus('Fehler bei Texterkennung');
-        updateProgress(0);
-        return null;
-      }
-    },
-    []
-  );
 
-  const isInitializing = !isReady && status !== 'Nicht initialisiert' && status !== 'Fehler bei Initialisierung' && status !== 'Fehler bei Texterkennung';
+  const recognize = useCallback(async (imageSource: File | HTMLCanvasElement): Promise<string | null> => {
+    if (!isReady || !worker) {
+      console.error("Recognize aufgerufen, bevor der Worker bereit war.");
+      setStatus('Worker nicht bereit');
+      return null;
+    }
+
+    try {
+      setStatus('Text wird erkannt...');
+      setProgress(0);
+      
+      const { data } = await worker.recognize(imageSource, {}, { 
+          logger: (m) => {
+             if (m.status === 'recognizing text' && isMounted.current) {
+                setProgress(Math.round(m.progress * 100));
+              }
+          }
+      });
+      
+       if (isMounted.current) {
+         setStatus('Bereit');
+         setProgress(100);
+       }
+      return data.text;
+    } catch (error) {
+      console.error('Fehler bei der Tesseract-Texterkennung:', error);
+       if (isMounted.current) {
+        setStatus('Fehler bei Texterkennung');
+        setProgress(0);
+       }
+      return null;
+    }
+  }, [isReady]);
 
   return { recognize, progress, status, isReady, isInitializing };
 }
