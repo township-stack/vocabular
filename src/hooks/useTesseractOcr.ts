@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useCallback, useEffect } from 'react';
@@ -34,15 +33,11 @@ async function getWorker(): Promise<Worker> {
       updateStatus('Worker wird erstellt...');
       const { createWorker } = await import('tesseract.js');
       
+      // The logger function cannot be passed to the worker, this is the fix.
       const createdWorker = await createWorker({
         workerPath: '/tesseract/worker.min.js',
         corePath: '/tesseract/tesseract-core.wasm.js',
         langPath: '/tessdata',
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            updateProgress(Math.round(m.progress * 100));
-          }
-        },
       });
 
       const langs = 'pol+deu';
@@ -67,7 +62,9 @@ async function getWorker(): Promise<Worker> {
 }
 
 // Pre-initialize on module load
-getWorker();
+if (typeof window !== 'undefined') {
+    getWorker();
+}
 
 
 // --- React Hook ---
@@ -103,7 +100,11 @@ export function useTesseractOcr() {
         const w = await getWorker();
         updateStatus('Text wird erkannt...');
         
-        const { data } = await w.recognize(imageSource);
+        const { data } = await w.recognize(imageSource, {}, { logger: (m) => {
+             if (m.status === 'recognizing text') {
+                updateProgress(Math.round(m.progress * 100));
+              }
+        }});
         
         updateStatus('Bereit');
         updateProgress(0);
